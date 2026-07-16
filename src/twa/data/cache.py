@@ -23,7 +23,7 @@ from twa.data.bybit import BybitAdapter
 from twa.data.coinbase import CoinbaseAdapter
 from twa.logging import get_logger
 from twa.models.types import (
-    Candle, FundingRate, OpenInterest, OrderBook, Ticker, Timeframe,
+    Candle, FundingRate, OpenInterest, OrderBook, Ticker, Timeframe, coerce_timeframe,
 )
 
 log = get_logger("data.aggregator")
@@ -74,26 +74,61 @@ class MarketDataAggregator:
             timeout=settings.http_timeout_s,
             headers={"User-Agent": "TradeWithArun/1.0"},
             http2=False,
+            follow_redirects=True,
         )
         self.adapters: Dict[str, ExchangeAdapter] = {
             name: cls(self.client)
             for name, cls in ADAPTERS.items()
             if name in [x.lower() for x in settings.exchanges]
         }
-        self.cache = TTLCache(default_ttl_s=float(settings.lookback_bars) * 0 + settings.http_timeout_s)
+        self.cache = TTLCache(default_ttl_s=settings.http_timeout_s)
         if not self.adapters:
             log.warning("data.no_adapters_selected", exchanges=settings.exchanges)
 
     async def close(self) -> None:
         await self.client.aclose()
 
+    async def probe(self, symbols: Optional[List[str]] = None, timeframe: Optional[Timeframe | str] = None) -> dict:
+        tf = coerce_timeframe(timeframe or self.settings.timeframe)
+        probe_symbol = (symbols or self.settings.symbols or ["BTCUSDT"])[0]
+        if probe_symbol not in {"BTCUSDT", "ETHUSDT", "BTC-USD", "ETH-USD"}:
+            probe_symbol = "BTCUSDT"
+        jobs = [adapter.fetch_candles(probe_symbol, tf, limit=2) for adapter in self.adapters.values()]
+        if jobs:
+            await asyncio.gather(*jobs, return_exceptions=True)
+        return self.health()
+
     def health(self) -> dict:
+        now = time.time()
+        adapters: Dict[str, dict] = {}
+        overall = "healthy"
+        for name, adapter in self.adapters.items():
+            h = adapter.health()
+            age = None if h.get("last_ok_ts") is None else now - float(h["last_ok_ts"])
+            if h.get("known_state") == "geo_blocked":
+                state = "degraded"
+                status = "degraded (geo-blocked)"
+            elif age is not None and age > _STALE_AFTER_S:
+                state = "stale"
+                status = "stale"
+            elif h.get("last_error"):
+                state = "degraded"
+                status = "degraded"
+            else:
+                state = "healthy"
+                status = "healthy"
+            if state != "healthy" and overall == "healthy":
+                overall = state
+            h["state"] = state
+            h["status"] = status
+            h["age_s"] = round(age, 3) if age is not None else None
+            adapters[name] = h
         return {
-            "adapters": {name: a.health() for name, a in self.adapters.items()},
+            "status": overall,
+            "adapters": adapters,
             "stale_threshold_s": _STALE_AFTER_S,
         }
 
-    # ---------- low-level helper ----------
     async def _gather_first(
         self,
         producer: Callable[[ExchangeAdapter], Awaitable[Optional[object]]],
@@ -110,7 +145,6 @@ class MarketDataAggregator:
             or time.time() - (a.last_ok_ts or 0) < _STALE_AFTER_S
         }
         if not tasks:
-            # All stale — try anyway, best effort.
             tasks = {name: asyncio.create_task(_safe(producer(a)), name=name)
                      for name, a in self.adapters.items()}
 
@@ -119,7 +153,6 @@ class MarketDataAggregator:
         for name, res in zip(tasks.keys(), done):
             results[name] = res
 
-        # Pick best result: prefer non-empty + non-error.
         chosen = None
         chosen_name = None
         for name, r in results.items():
@@ -139,7 +172,8 @@ class MarketDataAggregator:
     async def fetch_candles(
         self, symbol: str, timeframe: Timeframe, limit: int = 500,
     ) -> List[Candle]:
-        cached = await self.cache.get(f"candles:{symbol}:{timeframe}:{limit}")
+        timeframe = coerce_timeframe(timeframe)
+        cached = await self.cache.get(f"candles:{symbol}:{timeframe.value}:{limit}")
         if cached is not None:
             return cached  # type: ignore[return-value]
         res = await self._gather_first(
@@ -147,7 +181,6 @@ class MarketDataAggregator:
             symbol=symbol, require_non_empty=True,
         )
         candles: List[Candle] = res if isinstance(res, list) else []
-        # Cross-exchange sanity: price dispersion check on the last close.
         if len(candles) >= 2:
             last = candles[-1].close
             others = [a.fetch_candles(symbol, timeframe, 5) for a in self.adapters.values()]
@@ -166,7 +199,7 @@ class MarketDataAggregator:
                     disp = max(abs(c - mean) / mean for c in closes)
                     if disp > 0.10:
                         log.warning("data.dispersion.high", symbol=symbol, dispersion=round(disp, 4))
-        await self.cache.set(f"candles:{symbol}:{timeframe}:{limit}", candles)
+        await self.cache.set(f"candles:{symbol}:{timeframe.value}:{limit}", candles)
         return candles
 
     async def fetch_ticker(self, symbol: str) -> Optional[Ticker]:
@@ -188,10 +221,12 @@ class MarketDataAggregator:
         return b if isinstance(b, OrderBook) else None
 
     async def fetch_funding(self, symbol: str) -> Optional[FundingRate]:
-        return await self._gather_first(lambda a: a.fetch_funding(symbol), symbol=symbol)
+        f = await self._gather_first(lambda a: a.fetch_funding(symbol), symbol=symbol)
+        return f if isinstance(f, FundingRate) else None
 
     async def fetch_open_interest(self, symbol: str) -> Optional[OpenInterest]:
-        return await self._gather_first(lambda a: a.fetch_open_interest(symbol), symbol=symbol)
+        oi = await self._gather_first(lambda a: a.fetch_open_interest(symbol), symbol=symbol)
+        return oi if isinstance(oi, OpenInterest) else None
 
 
 async def _safe(coro: Awaitable[object]) -> object:

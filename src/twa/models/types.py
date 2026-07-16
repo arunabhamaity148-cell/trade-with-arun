@@ -35,6 +35,13 @@ class Timeframe(str, Enum):
     D1 = "1d"
 
 
+def coerce_timeframe(value: Timeframe | str) -> Timeframe:
+    """Normalise user/config input to the canonical Timeframe enum."""
+    if isinstance(value, Timeframe):
+        return value
+    return Timeframe(str(value))
+
+
 class Candle(BaseModel):
     """Single OHLCV candle, exchange-agnostic."""
 

@@ -12,27 +12,21 @@ It does NOT place orders.
 from __future__ import annotations
 
 import asyncio
-import json
 import time
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from twa.config import Settings, get_settings
 from twa.data.cache import MarketDataAggregator
-from twa.features.cross_exchange import (
-    normalise_funding, oi_momentum, orderbook_imbalance, cross_exchange_dispersion,
-)
+from twa.features.cross_exchange import normalise_funding, oi_momentum, orderbook_imbalance
 from twa.features.engineering import compute_all
 from twa.logging import get_logger
 from twa.ml.calibrator import ConfidenceCalibrator, IdentityCalibrator
-from twa.models.types import (
-    FundingRate, OpenInterest, OrderBook, RegimeLabel, Side, SignalIdea, Timeframe,
-)
+from twa.models.types import FundingRate, OrderBook, RegimeLabel, SignalIdea, Timeframe, coerce_timeframe
 from twa.monitoring.health import HealthMonitor
 from twa.news.guard import NewsGuard
-from twa.regime.classifier import assign_weights, classify, regime_confidence
+from twa.regime.classifier import classify, regime_confidence
 from twa.risk.engine import RiskEngine
-from twa.signal.engine import build_factor_vector, compute_signal
+from twa.signal.engine import compute_signal
 from twa.telegram.bot import TelegramBot
 
 log = get_logger("orchestrator")
@@ -43,6 +37,7 @@ class Orchestrator:
 
     def __init__(self, settings: Optional[Settings] = None):
         self.settings = settings or get_settings()
+        self.timeframe = coerce_timeframe(self.settings.timeframe)
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.data = MarketDataAggregator(self.settings)
         self.news = NewsGuard(self.settings)
@@ -57,13 +52,11 @@ class Orchestrator:
         self._running = False
         self._signals_log: List[SignalIdea] = []
 
-    # ---------- lifecycle ----------
     async def start(self) -> None:
         self._running = True
         await self.health.start()
         await self.telegram.start_command_loop()
-        log.info("orchestrator.started",
-                 symbols=self.settings.symbols, tf=self.settings.timeframe.value)
+        log.info("orchestrator.started", symbols=self.settings.symbols, tf=self.timeframe.value)
 
     async def stop(self) -> None:
         self._running = False
@@ -72,7 +65,6 @@ class Orchestrator:
         await self.data.close()
         log.info("orchestrator.stopped")
 
-    # ---------- main loop ----------
     async def run_forever(self, interval_s: float = 30.0) -> None:
         await self.start()
         try:
@@ -99,9 +91,7 @@ class Orchestrator:
                 log.warning("orchestrator.symbol_failed", symbol=symbol, err=str(e))
 
     async def _one_symbol(self, symbol: str) -> Optional[SignalIdea]:
-        candles = await self.data.fetch_candles(
-            symbol, self.settings.timeframe, limit=self.settings.lookback_bars,
-        )
+        candles = await self.data.fetch_candles(symbol, self.timeframe, limit=self.settings.lookback_bars)
         if not candles:
             return None
 
@@ -109,30 +99,28 @@ class Orchestrator:
         regime = classify(feats)
         reg_conf = regime_confidence(feats, regime)
 
-        # Cross-exchange factors: funding, basis, OI, OBI.
         funding: Optional[FundingRate] = await self.data.fetch_funding(symbol)
         oi = await self.data.fetch_open_interest(symbol)
         book: Optional[OrderBook] = await self.data.fetch_orderbook(symbol, depth=20)
 
-        # OI delta: average over last two values; we only have the latest here so
-        # treat it as 0 in absence of history.  Documented limitation.
         oi_delta = oi_momentum(getattr(oi, "open_interest", None), None)
-
         overrides = {
-            "funding":  normalise_funding(funding),
-            "basis":    0.0,        # no consolidated basis feed in free public set
+            "funding": normalise_funding(funding),
+            "basis": 0.0,
             "oi_delta": float(oi_delta),
-            "obi":      float(orderbook_imbalance(book, depth=10)),
+            "obi": float(orderbook_imbalance(book, depth=10)),
         }
 
-        # News dampening.
         nd, events = self.news.dampen_for(symbol)
-        # ML calibration multiplier.
-        ml_factor = self.calibrator.calibrate(0.5)  # calibrate a midpoint
+        ml_factor = self.calibrator.calibrate(0.5)
         sig = compute_signal(
-            candles, self.settings.timeframe, overrides,
-            regime=regime, regime_conf=reg_conf,
-            news_dampen=nd, ml_calibration=ml_factor,
+            candles,
+            self.timeframe,
+            overrides,
+            regime=regime,
+            regime_conf=reg_conf,
+            news_dampen=nd,
+            ml_calibration=ml_factor,
         )
         if sig is None:
             return None
@@ -149,11 +137,9 @@ class Orchestrator:
         if not verdict.accepted:
             log.debug("orchestrator.risk_rejected", symbol=symbol, reason=verdict.reason)
             return None
-        # overwrite signal confidence with calibrated one
         sig.confidence = float(verdict.adjusted_confidence)
         return sig
 
-    # ---------- accounting ----------
     def _record(self, sig: SignalIdea) -> None:
         self._signals_log.append(sig)
         if len(self._signals_log) > 2000:

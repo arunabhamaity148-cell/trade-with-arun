@@ -26,7 +26,7 @@ CATEGORY_PERP = "linear"
 
 
 def _tf_to_bybit(tf: Timeframe) -> str:
-    return {"1m":"1","5m":"5","15m":"15","1h":"60","4h":"240","1d":"D"}[tf.value]
+    return {"1m": "1", "5m": "5", "15m": "15", "1h": "60", "4h": "240", "1d": "D"}[tf.value]
 
 
 def _category(symbol: str) -> str:
@@ -51,7 +51,7 @@ class BybitAdapter(ExchangeAdapter):
             r.raise_for_status()
             d = r.json()
         except Exception as e:
-            self.last_error = f"klines:{e!s}"
+            self.record_error(f"klines:{e!s}")
             log.warning("bybit.klines.error", symbol=symbol, error=str(e))
             return []
         lst = (d.get("result") or {}).get("list") or []
@@ -70,15 +70,19 @@ class BybitAdapter(ExchangeAdapter):
                 log.debug("bybit.candle.parse.skip", err=str(e))
                 continue
         out.sort(key=lambda c: c.open_time.timestamp())
-        self.last_ok_ts = out[-1].open_time.timestamp() if out else None
-        self.last_error = None
+        if out:
+            self.record_success()
+            self.clear_error()
         return out
 
     async def fetch_ticker(self, symbol: str) -> Optional[Ticker]:
         cat = _category(symbol)
         try:
-            r = await self.client.get(f"{BASE}/v5/market/tickers",
-                                      params={"category": cat, "symbol": symbol}, timeout=10.0)
+            r = await self.client.get(
+                f"{BASE}/v5/market/tickers",
+                params={"category": cat, "symbol": symbol},
+                timeout=10.0,
+            )
             r.raise_for_status()
             d = r.json()
             lst = (d.get("result") or {}).get("list") or []
@@ -92,66 +96,82 @@ class BybitAdapter(ExchangeAdapter):
             chg = float(t.get("price24hPcnt", 0) or 0) * 100.0
             if last <= 0:
                 return None
+            self.record_success()
+            self.clear_error()
             return Ticker(symbol=symbol, exchange=self.name, bid=bid, ask=ask,
                           last=last, volume_24h=vol, change_pct_24h=chg)
         except Exception as e:
-            self.last_error = f"ticker:{e!s}"
+            self.record_error(f"ticker:{e!s}")
             return None
 
     async def fetch_orderbook(self, symbol: str, depth: int = 20) -> Optional[OrderBook]:
         cat = _category(symbol)
         try:
-            r = await self.client.get(f"{BASE}/v5/market/orderbook",
-                                      params={"category": cat, "symbol": symbol, "limit": depth}, timeout=10.0)
+            r = await self.client.get(
+                f"{BASE}/v5/market/orderbook",
+                params={"category": cat, "symbol": symbol, "limit": depth},
+                timeout=10.0,
+            )
             r.raise_for_status()
             d = r.json()
             res = d.get("result") or {}
             bids = [OrderBookLevel(price=float(b[0]), size=float(b[1])) for b in res.get("b", [])]
             asks = [OrderBookLevel(price=float(a[0]), size=float(a[1])) for a in res.get("a", [])]
+            self.record_success()
+            self.clear_error()
             return OrderBook(symbol=symbol, exchange=self.name, bids=bids, asks=asks)
         except Exception as e:
-            self.last_error = f"depth:{e!s}"
+            self.record_error(f"depth:{e!s}")
             return None
 
     async def fetch_funding(self, symbol: str) -> Optional[FundingRate]:
         if _category(symbol) != "linear":
             return None
         try:
-            r = await self.client.get(f"{BASE}/v5/market/funding/history",
-                                      params={"category": "linear", "symbol": symbol, "limit": 1},
-                                      timeout=10.0)
+            r = await self.client.get(
+                f"{BASE}/v5/market/funding/history",
+                params={"category": "linear", "symbol": symbol, "limit": 1},
+                timeout=10.0,
+            )
             r.raise_for_status()
             d = r.json()
             lst = (d.get("result") or {}).get("list") or []
             if not lst:
                 return None
             f = lst[0]
+            self.record_success()
+            self.clear_error()
             return FundingRate(
                 symbol=symbol, exchange=self.name,
                 rate=float(f.get("fundingRate", 0.0)),
             )
         except Exception as e:
-            self.last_error = f"funding:{e!s}"
+            self.record_error(f"funding:{e!s}")
             return None
 
     async def fetch_open_interest(self, symbol: str) -> Optional[OpenInterest]:
         if _category(symbol) != "linear":
             return None
         try:
-            r = await self.client.get(f"{BASE}/v5/market/open-interest",
-                                      params={"category": "linear", "symbol": symbol,
-                                              "intervalTime": "5min", "limit": 1}, timeout=10.0)
+            r = await self.client.get(
+                f"{BASE}/v5/market/open-interest",
+                params={"category": "linear", "symbol": symbol,
+                        "intervalTime": "5min", "limit": 1},
+                timeout=10.0,
+            )
             r.raise_for_status()
             d = r.json()
             lst = (d.get("result") or {}).get("list") or []
             if not lst:
                 return None
             o = lst[0]
+            self.record_success()
+            self.clear_error()
             return OpenInterest(
                 symbol=symbol, exchange=self.name,
                 open_interest=float(o.get("openInterest", 0)),
                 open_interest_value=float(o.get("value", 0)) or None,
             )
         except Exception as e:
-            self.last_error = f"oi:{e!s}"
+            self.record_error(f"oi:{e!s}")
             return None

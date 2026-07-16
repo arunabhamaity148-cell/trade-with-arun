@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="TWA_",
-        env_file=None,
+        env_file=".env",
         case_sensitive=False,
         extra="ignore",
     )

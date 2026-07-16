@@ -12,9 +12,9 @@ import asyncio
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import psutil
 
@@ -67,24 +67,39 @@ class HealthMonitor:
             except Exception:
                 fds = -1
             m = ProcessMetrics(ts=time.time(), cpu_pct=cpu, rss_mb=mem,
-                              fds=fds, threads=self._proc.num_threads())
+                               fds=fds, threads=self._proc.num_threads())
             self._metrics.append(m)
             if len(self._metrics) > 256:
                 self._metrics = self._metrics[-256:]
 
             feed_health = self.data.health()
             health_doc = {
-                "ts": m.ts, "cpu_pct": m.cpu_pct, "rss_mb": m.rss_mb,
-                "fds": m.fds, "threads": m.threads,
+                "ts": m.ts,
+                "cpu_pct": m.cpu_pct,
+                "rss_mb": m.rss_mb,
+                "fds": m.fds,
+                "threads": m.threads,
                 "feeds": feed_health,
             }
             self.beat_path.parent.mkdir(parents=True, exist_ok=True)
             self.beat_path.write_text(json.dumps(health_doc, indent=2))
             self._last_heartbeat = m.ts
-            log.info("health.beat", cpu=round(cpu, 2), rss_mb=round(mem, 2),
-                     feeds=list(feed_health.get("adapters", {}).keys()),
-                     stale=[n for n, h in feed_health.get("adapters", {}).items()
-                            if h.get("last_error")])
+            degraded = {
+                name: {
+                    "status": h.get("status"),
+                    "recent_error_rate": h.get("recent_error_rate"),
+                    "recent_error_count": h.get("recent_error_count"),
+                }
+                for name, h in feed_health.get("adapters", {}).items()
+                if h.get("state") != "healthy"
+            }
+            log.info(
+                "health.beat",
+                cpu=round(cpu, 2),
+                rss_mb=round(mem, 2),
+                feed_status=feed_health.get("status"),
+                degraded=degraded,
+            )
         except Exception as e:  # noqa: BLE001
             log.warning("health.tick_failed", err=str(e))
 

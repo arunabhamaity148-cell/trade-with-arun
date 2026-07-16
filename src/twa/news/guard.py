@@ -41,15 +41,14 @@ HIGH_KEYWORDS = [
     "treasury", "whale", "large transfer", "exchange listing", "delist",
 ]
 SYMBOL_PATTERNS = {
-    "BTCUSDT":  [r"\bbtc\b", r"\bbitcoin\b"],
-    "ETHUSDT":  [r"\beth\b", r"\bethereum\b"],
-    "SOLUSDT":  [r"\bsol\b", r"\bsolana\b"],
-    "BNBUSDT":  [r"\bbnb\b", r"\bbinance coin\b"],
-    "XRPUSDT":  [r"\bxrp\b", r"\bripple\b"],
+    "BTCUSDT": [r"\bbtc\b", r"\bbitcoin\b"],
+    "ETHUSDT": [r"\beth\b", r"\bethereum\b"],
+    "SOLUSDT": [r"\bsol\b", r"\bsolana\b"],
+    "BNBUSDT": [r"\bbnb\b", r"\bbinance coin\b"],
+    "XRPUSDT": [r"\bxrp\b", r"\bripple\b"],
     "DOGEUSDT": [r"\bdoge\b", r"\bdogecoin\b"],
-    "ADAUSDT":  [r"\bada\b", r"\bcardano\b"],
+    "ADAUSDT": [r"\bada\b", r"\bcardano\b"],
 }
-
 
 SEVERE_RSS_FEEDS = [
     "https://www.coindesk.com/arc/outboundfeeds/rss/",
@@ -77,21 +76,19 @@ class NewsGuard:
             events.extend(await self._fetch_rss())
         if "cryptopanic" in self.settings.news_sources and self.settings.cryptopanic_public_key:
             events.extend(await self._fetch_cryptopanic())
-        # de-dup
         for ev in events:
             h = hashlib.sha1((ev.url or ev.title).encode()).hexdigest()
             if h in self._seen:
                 continue
             self._seen.add(h)
             self._cache.append(ev)
-        # purge anything older than 12 hours to keep memory clean.
         cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=12)
         self._cache = [e for e in self._cache if e.published_at >= cutoff]
         log.debug("news.refresh", new=len(events), cached=len(self._cache))
 
     async def _fetch_rss(self) -> List[NewsEvent]:
         events: List[NewsEvent] = []
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             for url in SEVERE_RSS_FEEDS:
                 try:
                     r = await client.get(url)
@@ -123,7 +120,7 @@ class NewsGuard:
             params["auth_token"] = self.settings.cryptopanic_public_key
         out: List[NewsEvent] = []
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 r = await client.get(url, params=params)
                 r.raise_for_status()
                 data = r.json()
@@ -151,7 +148,6 @@ class NewsGuard:
             ))
         return out
 
-    # -- classification -----------------------------------------------------
     def _classify(self, text: str) -> Tuple[float, float, str]:
         t = text.lower()
         sev = 0.0
@@ -197,6 +193,5 @@ class NewsGuard:
         max_severity = max(e.severity for e in recent)
         if any_critical:
             return 0.1, recent
-        # Linear: severity 0.5 → 0.6, severity 1.0 → 0.1.
         dampen = max(0.1, min(1.0, 1.0 - max_severity + 0.1))
         return float(dampen), recent

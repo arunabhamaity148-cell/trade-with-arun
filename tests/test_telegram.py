@@ -29,15 +29,17 @@ def test_render_signal_contains_core_fields():
         text = render_signal(_mk_sig(0.72, side))
         assert "BTCUSDT" in text
         assert "Entry zone" in text
-        assert "Targets" in text
-        assert "Invalidation" in text
-        assert "TRADE WITH ARUN" not in text  # not in the message body
+        assert "TP1" in text and "TP2" in text and "TP3" in text
+        assert "Invalidation / SL" in text
+        assert "Expected edge" in text
+        assert "Signal ID" in text
+        assert "TRADE WITH ARUN" not in text
         assert "no orders are placed" in text.lower() or "signal only" in text.lower()
 
 
 def test_render_status_minimal():
     text = render_status("LONG", "trend_up", 0.5, ["vol=0.2", "oi=120"])
     assert "LONG" in text
-    assert "trend_up" in text
+    assert "trend\\_up" in text
     assert "0.50" in text
     assert "vol=0.2" in text

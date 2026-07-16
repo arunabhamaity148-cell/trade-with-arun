@@ -13,13 +13,12 @@ The bot NEVER sends orders.  All messages are informational.
 """
 from __future__ import annotations
 
-import asyncio
 import time
-from typing import List, Optional
+from typing import List
 
 from twa.config import Settings
 from twa.logging import get_logger
-from twa.models.types import SignalIdea
+from twa.models.types import RegimeLabel, Side, SignalIdea
 
 log = get_logger("telegram")
 
@@ -31,58 +30,92 @@ except Exception:  # pragma: no cover - optional runtime dep
     _PTB_AVAILABLE = False
 
 
-# -----------------------------------------------------------------------------
-# Premium rendering
-# -----------------------------------------------------------------------------
+def _md(text: str) -> str:
+    return (
+        str(text)
+        .replace("\\", "\\\\")
+        .replace("`", "'")
+        .replace("*", "\\*")
+        .replace("_", "\\_")
+        .replace("[", "(")
+        .replace("]", ")")
+    )
+
+
 def render_signal(sig: SignalIdea) -> str:
-    """Format a single signal idea for Telegram.  No HTML / Markdown ambiguity."""
-    conf_pct = int(round(sig.confidence * 100))
-    fire = "🟢" if sig.confidence >= 0.7 else ("🟡" if sig.confidence >= 0.45 else "🟠")
-    bar = "▓" * (conf_pct // 10) + "░" * (10 - conf_pct // 10)
-    direction = "🟢 LONG" if sig.side.value == "LONG" else ("🔴 SHORT" if sig.side.value == "SHORT" else "⚪ NEUTRAL")
+    """Format a single signal idea for Telegram premium Markdown output."""
+    SIDE_EMOJIS = {
+        Side.LONG: ("🟢", "LONG"),
+        Side.SHORT: ("🔴", "SHORT"),
+        Side.NEUTRAL: ("⚪", "NEUTRAL"),
+    }
+    REGIME_EMOJIS = {
+        RegimeLabel.TREND_UP: "🟢",
+        RegimeLabel.TREND_DOWN: "🟣",
+        RegimeLabel.RANGE: "🔵",
+        RegimeLabel.VOLATILE: "🟡",
+        RegimeLabel.STRESSED: "🟠",
+    }
+    CONFIDENCE_SEGMENTS = 10
+    CONFIDENCE_FILLED = "█"
+    CONFIDENCE_EMPTY = "░"
+    MAX_FACTORS = 4
+    MAX_NEWS = 2
+
+    side_emoji, side_label = SIDE_EMOJIS[sig.side]
+    regime_emoji = REGIME_EMOJIS.get(sig.regime, "⚪")
+    filled = min(CONFIDENCE_SEGMENTS, int(sig.confidence * CONFIDENCE_SEGMENTS + 1e-9))
+    bar = CONFIDENCE_FILLED * filled + CONFIDENCE_EMPTY * (CONFIDENCE_SEGMENTS - filled)
+    conf_pct = sig.confidence * 100.0
+    expiry = sig.expires_at.strftime("%Y-%m-%d %H:%M UTC") if sig.expires_at else "n/a"
+
     lines = [
-        f"{fire} *{sig.symbol}*  •  *{sig.timeframe.value}*  •  *{sig.regime.value.upper()}*",
-        f"{direction}        (confidence `{bar}` {conf_pct}%)",
+        f"{side_emoji} *{_md(sig.symbol)}* · `{sig.timeframe.value}` · {regime_emoji} *{_md(sig.regime.value.upper())}*",
+        f"*Bias* `{side_label}`   *Confidence* `{bar}` `{sig.confidence:.2f}` ({conf_pct:.1f}%)",
         "",
-        f"*Entry zone*   : `{sig.entry_zone[0]:.6g}`  —  `{sig.entry_zone[1]:.6g}`",
-        f"*Targets*      : 1R `{sig.targets[0]:.6g}`  •  2R `{sig.targets[1]:.6g}`  •  3R `{sig.targets[2]:.6g}`",
-        f"*Invalidation* : `{sig.invalidation:.6g}`",
-        f"*Expected edge*: `{sig.expected_edge_bps:+.1f}` bps",
-        f"*News dampen* : `{sig.news_dampen:.2f}`",
-        "",
-        "*Why:*",
+        f"*Entry zone* `{sig.entry_zone[0]:.6g}` → `{sig.entry_zone[1]:.6g}`",
+        f"*TP1* `{sig.targets[0]:.6g}`   *TP2* `{sig.targets[1]:.6g}`   *TP3* `{sig.targets[2]:.6g}`",
+        f"*Invalidation / SL* `{sig.invalidation:.6g}`",
+        f"*Expected edge (bps)* `{sig.expected_edge_bps:+.1f}`",
+        f"*News dampening* `{sig.news_dampen:.2f}`",
     ]
-    for r in sig.rationale:
-        lines.append(f"  • {r}")
+
+    if sig.rationale:
+        lines.extend(["", "*Why now*"])
+        for reason in sig.rationale[:3]:
+            lines.append(f"• {_md(reason)}")
+
     contrib_lines = sorted(sig.factor_contributions, key=lambda c: -abs(c.contribution))
     if contrib_lines:
-        lines.append("")
-        lines.append("*Top factors* (weight · normalised · contribution):")
-        for c in contrib_lines[:5]:
+        lines.extend(["", "*Top factors*"])
+        for c in contrib_lines[:MAX_FACTORS]:
+            arrow = "📈" if c.contribution > 0 else ("📉" if c.contribution < 0 else "➖")
             lines.append(
-                f"  • `{c.name}`  w `{c.weight:+.2f}`  n `{c.norm_value:+.2f}`  →  `{c.contribution:+.3f}`"
+                f"{arrow} `{_md(c.name)}` n `{c.norm_value:+.2f}` · w `{c.weight:+.2f}` · c `{c.contribution:+.3f}`"
             )
+
     if sig.news_events:
-        lines.append("")
-        lines.append("*News events* impacting confidence:")
-        for ev in sig.news_events[:3]:
-            when = ev.published_at.strftime("%Y-%m-%d %H:%M UTC")
-            lines.append(f"  • [{ev.category}|{ev.severity:.2f}] {ev.title[:120]} ({when})")
-    lines.append("")
-    lines.append("⚠️ _Signal only — no orders are placed._  ")
-    lines.append(f"_Signal ID: `{sig.id}` · expires at {(sig.expires_at.strftime('%H:%M:%S UTC') if sig.expires_at else 'n/a')}_")
+        lines.extend(["", "*News context*"])
+        for ev in sig.news_events[:MAX_NEWS]:
+            when = ev.published_at.strftime("%m-%d %H:%M UTC")
+            lines.append(
+                f"• `{ev.category}` sev `{ev.severity:.2f}` · {_md(ev.title[:100])} · `{when}`"
+            )
+
+    lines.extend([
+        "",
+        "⚠️ _Signal only — no orders are placed._",
+        f"_Signal ID_ `{_md(sig.id)}`   _Expiry_ `{expiry}`",
+    ])
     return "\n".join(lines)
 
 
 def render_status(side: str, regime: str, conf: float, info_lines: List[str]) -> str:
     """Compact status block used by /health, /regime, /stats."""
-    head = f"*{side}*  •  regime *{regime}*  •  confidence `{conf:.2f}`"
-    return head + "\n\n" + "\n".join(f"  • {l}" for l in info_lines)
+    head = f"*{_md(side)}*  •  regime *{_md(regime)}*  •  confidence `{conf:.2f}`"
+    return head + "\n\n" + "\n".join(f"  • {_md(l)}" for l in info_lines)
 
 
-# -----------------------------------------------------------------------------
-# Bot runtime
-# -----------------------------------------------------------------------------
 class TelegramBot:
     """Optional Telegram bot.  No-op if not configured or python-telegram-bot missing."""
 
@@ -163,7 +196,7 @@ class TelegramBot:
                 return
             health = ctx.application.bot_data.get("health", {})
             text = "*Health*\n" + "\n".join(
-                f"  • `{n}` last_ok={h.get('last_ok_ts')} err={h.get('last_error')}"
+                f"  • `{n}` status={_md(h.get('status', 'n/a'))} err={_md(str(h.get('last_error')))} rate={h.get('recent_error_rate', 0.0):.2f}"
                 for n, h in health.get("adapters", {}).items()
             )
             await update.message.reply_text(text or "(no data)", parse_mode="Markdown")
@@ -172,7 +205,7 @@ class TelegramBot:
             if not await _is_admin(update):
                 return
             txt = ctx.application.bot_data.get("config_text", "(no config snapshot)")
-            await update.message.reply_text(f"*Configuration*\n  {txt}", parse_mode="Markdown")
+            await update.message.reply_text(f"*Configuration*\n  {_md(txt)}", parse_mode="Markdown")
 
         app.add_handler(CommandHandler("signal", cmd_signal))
         app.add_handler(CommandHandler("health", cmd_health))
@@ -181,7 +214,6 @@ class TelegramBot:
         log.info("telegram.command_loop.starting")
         await app.initialize()
         await app.start()
-        # run polling in background
         await app.updater.start_polling(drop_pending_updates=True)  # type: ignore[attr-defined]
 
     async def stop(self) -> None:
