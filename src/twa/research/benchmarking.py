@@ -17,6 +17,8 @@ from twa.research.utils import max_drawdown, sharpe_like
 
 log = get_logger("research.benchmarking")
 
+PRODUCTION_ENGINE_TECHNICAL_ONLY = "production_engine_technical_only"
+
 
 class BenchmarkConfig(BaseModel):
     ma_fast: int = 10
@@ -117,11 +119,29 @@ class BenchmarkRunner:
         )
 
     def _production_engine(self, session: ResearchSession) -> StrategyBenchmark:
-        result = simulate(session.candles, session.timeframe, factor_overrides_list=[{}] * len(session.candles))
+        """Benchmark the replay engine with technical factors only.
+
+        Historical funding / basis / OI-delta / orderbook-imbalance values are not
+        reconstructible from the current free-data research session inputs. The
+        benchmark row is therefore labelled explicitly as technical-only so it is
+        not mistaken for a like-for-like replay of live cross-exchange behaviour.
+        """
+        log.warning(
+            "research.benchmark.production_engine_limited",
+            symbol=session.symbol,
+            timeframe=session.timeframe.value,
+            limitation="historical cross-exchange factors unavailable; benchmark is technical-only",
+        )
+        result = simulate(
+            session.candles,
+            session.timeframe,
+            factor_overrides_list=[{}] * len(session.candles),
+            settings=session.settings,
+        )
         closed = [t.pnl_bps for t in result.trades if t.exit_price is not None]
         series = pd.Series(closed, dtype=float)
         return StrategyBenchmark(
-            name="production_engine",
+            name=PRODUCTION_ENGINE_TECHNICAL_ONLY,
             trades=result.total_trades,
             edge_per_trade_bps=float(result.expectancy_bps),
             hit_rate=float(result.win_rate() or 0.0),

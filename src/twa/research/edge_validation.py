@@ -69,11 +69,7 @@ class EdgeValidationFramework:
         sensitivity = self._sensitivity(session, strategy) if isinstance(strategy, ThresholdStrategy) else {}
         stable = not sensitivity or all(np.sign(v or 0.0) == np.sign(out_mean or 0.0) for v in sensitivity.values())
         passed = bool(
-            len(test_rets) >= 10
-            and out_mean > 0
-            and in_mean > 0
-            and p_value <= 0.10
-            and stable
+            len(test_rets) >= 10 and out_mean > 0 and in_mean > 0 and p_value <= 0.10 and stable
         )
         note = "ok" if passed else "FAILED_VALIDATION"
         return EdgeValidationResult(
@@ -114,10 +110,22 @@ class EdgeValidationFramework:
 
     def _sensitivity(self, session: ResearchSession, strategy: ThresholdStrategy) -> Dict[str, float]:
         out: Dict[str, float] = {}
-        for mult in (1.0 - strategy.sensitivity_pct, 1.0 + strategy.sensitivity_pct):
-            perturbed = strategy.model_copy(update={"threshold": strategy.threshold * mult})
+        for label, threshold in self._perturbed_thresholds(strategy).items():
+            perturbed = strategy.model_copy(update={"threshold": threshold})
             df = session.target_frame(perturbed.horizon)
             positions = self._positions_from_threshold(df, perturbed)
             rets = (positions * df["forward_return_bps"])[positions != 0]
-            out[f"threshold_x{mult:.2f}"] = float(rets.mean()) if len(rets) else 0.0
+            out[label] = float(rets.mean()) if len(rets) else 0.0
         return out
+
+    def _perturbed_thresholds(self, strategy: ThresholdStrategy) -> Dict[str, float]:
+        if abs(strategy.threshold) < 1e-12:
+            abs_shift = float(strategy.sensitivity_pct)
+            return {
+                f"threshold_abs_-{abs_shift:.2f}": -abs_shift,
+                f"threshold_abs_+{abs_shift:.2f}": abs_shift,
+            }
+        return {
+            f"threshold_x{mult:.2f}": strategy.threshold * mult
+            for mult in (1.0 - strategy.sensitivity_pct, 1.0 + strategy.sensitivity_pct)
+        }
