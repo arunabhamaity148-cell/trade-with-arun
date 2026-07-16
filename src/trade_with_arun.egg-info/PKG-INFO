@@ -1,0 +1,75 @@
+Metadata-Version: 2.4
+Name: trade-with-arun
+Version: 1.0.0
+Summary: TRADE WITH ARUN - Institutional-grade crypto derivatives signal engine (signal-only, no order placement).
+Author: Trade With Arun Engineering
+License: MIT
+Keywords: crypto,signals,derivatives,quant,funding,basis,microstructure
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Framework :: AsyncIO
+Classifier: Topic :: Office/Business :: Financial :: Investment
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Operating System :: Microsoft :: Windows
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic>=2.6
+Requires-Dist: pydantic-settings>=2.2
+Requires-Dist: httpx>=0.27
+Requires-Dist: websockets>=12.0
+Requires-Dist: orjson>=3.10
+Requires-Dist: numpy>=1.26
+Requires-Dist: pandas>=2.1
+Requires-Dist: scipy>=1.11
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: structlog>=24.1
+Requires-Dist: tenacity>=8.2
+Requires-Dist: apscheduler>=3.10
+Requires-Dist: feedparser>=6.0.11
+Requires-Dist: python-telegram-bot>=21.0
+Requires-Dist: psutil>=5.9
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+Requires-Dist: pytest-cov>=4.1; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+Provides-Extra: ml
+Requires-Dist: scikit-learn>=1.4; extra == "ml"
+
+# TRADE WITH ARUN
+
+> Institutional-grade crypto derivatives **signal engine** (signal-only; **no order placement**).
+> Production-ready, async-first, fully typed, Pydantic-validated, free public data only.
+
+## What it does
+- Pulls **free** market data from Binance, Bybit, Coinbase and CoinGecko public endpoints
+- Engineers microstructure features (funding, basis, OI, OBI, liquidation bursts, realised vol)
+- Classifies the market regime (trend / range / volatile / stressed) and adapts signal weights
+- Produces multi-factor, explainable trade ideas with confidence, risk and invalidation levels
+- Filters signals through a News Guard (free public sources + RSS) and an ML calibrator
+- Telegram UX with admin / health / statistics commands
+- Health + heartbeat + memory + CPU monitoring; graceful shutdown
+- Honest backtest framework with walk-forward and Monte Carlo. **No performance is fabricated.**
+
+## What it does NOT do
+- **It does not place orders.** It only produces explainable trade ideas.
+
+## Quick start
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,ml]"
+cp .env.example .env  # then edit values
+pytest -q
+twa run --symbols BTCUSDT,ETHUSDT --timeframe 1h
+twa paper --symbol BTCUSDT --timeframe 15m
+twa backtest --symbol BTCUSDT --timeframe 1h --days 90
+```
+
+## Folder layout
+See `docs/PROJECT_STRUCTURE.md`.
+
+## Disclaimer
+This software is research/educational software. It produces signals, not investment advice.
+Cryptocurrency derivatives trading carries substantial risk of loss.

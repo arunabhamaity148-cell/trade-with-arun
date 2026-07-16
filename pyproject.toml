@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trade-with-arun"
+version = "1.0.0"
+description = "TRADE WITH ARUN - Institutional-grade crypto derivatives signal engine (signal-only, no order placement)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Trade With Arun Engineering"}]
+keywords = ["crypto", "signals", "derivatives", "quant", "funding", "basis", "microstructure"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: AsyncIO",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "httpx>=0.27",
+    "websockets>=12.0",
+    "orjson>=3.10",
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "scipy>=1.11",
+    "python-dotenv>=1.0",
+    "structlog>=24.1",
+    "tenacity>=8.2",
+    "apscheduler>=3.10",
+    "feedparser>=6.0.11",
+    "python-telegram-bot>=21.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+]
+ml = [
+    "scikit-learn>=1.4",
+]
+
+[project.scripts]
+twa = "twa.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
