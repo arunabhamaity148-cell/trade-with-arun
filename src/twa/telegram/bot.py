@@ -116,6 +116,15 @@ def render_status(side: str, regime: str, conf: float, info_lines: List[str]) ->
     return head + "\n\n" + "\n".join(f"  • {_md(l)}" for l in info_lines)
 
 
+def render_followup(sig: SignalIdea, message: str) -> str:
+    return "\n".join([
+        f"🔔 *{_md(sig.symbol)}* `{sig.timeframe.value}`",
+        f"*Follow-up* {_md(message)}",
+        f"*Signal ID* `{_md(sig.id)}`",
+        "⚠️ _Signal only — no orders are placed._",
+    ])
+
+
 class TelegramBot:
     """Optional Telegram bot.  No-op if not configured or python-telegram-bot missing."""
 

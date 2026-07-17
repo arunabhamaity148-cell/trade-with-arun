@@ -25,6 +25,7 @@ class BenchmarkConfig(BaseModel):
     ma_slow: int = 30
     random_seed: int = 42
     random_trade_prob: float = 0.15
+    random_seed_runs: int = 20
 
 
 class StrategyBenchmark(BaseModel):
@@ -80,7 +81,7 @@ class BenchmarkRunner:
         rows = [
             self._from_positions("buy_and_hold", pd.Series(1.0, index=df.index), df),
             self._from_positions("ma_crossover", self._ma_positions(df, config), df),
-            self._from_positions("random_entry", self._random_positions(df, config), df),
+            self._random_benchmark(df, config),
             self._production_engine(session),
         ]
         rows.sort(key=lambda r: r.edge_per_trade_bps, reverse=True)
@@ -101,11 +102,24 @@ class BenchmarkRunner:
         slow = df["close"].rolling(config.ma_slow).mean()
         return pd.Series(np.where(fast > slow, 1.0, -1.0), index=df.index).fillna(0.0)
 
-    def _random_positions(self, df: pd.DataFrame, config: BenchmarkConfig) -> pd.Series:
-        rng = np.random.default_rng(config.random_seed)
+    def _random_positions(self, df: pd.DataFrame, *, seed: int, config: BenchmarkConfig) -> pd.Series:
+        rng = np.random.default_rng(seed)
         mask = rng.random(len(df)) < config.random_trade_prob
         direction = rng.choice([-1.0, 1.0], size=len(df))
         return pd.Series(np.where(mask, direction, 0.0), index=df.index)
+
+    def _random_benchmark(self, df: pd.DataFrame, config: BenchmarkConfig) -> StrategyBenchmark:
+        rows: List[StrategyBenchmark] = []
+        for seed in range(config.random_seed, config.random_seed + max(1, config.random_seed_runs)):
+            rows.append(self._from_positions("random_entry", self._random_positions(df, seed=seed, config=config), df))
+        return StrategyBenchmark(
+            name="random_entry",
+            trades=int(round(np.mean([r.trades for r in rows]))),
+            edge_per_trade_bps=float(np.mean([r.edge_per_trade_bps for r in rows])),
+            hit_rate=float(np.mean([r.hit_rate for r in rows])),
+            drawdown_bps=float(np.mean([r.drawdown_bps for r in rows])),
+            sharpe_like=float(np.mean([r.sharpe_like for r in rows])),
+        )
 
     def _from_positions(self, name: str, positions: pd.Series, df: pd.DataFrame) -> StrategyBenchmark:
         rets = (positions * df["forward_return_bps"])[positions != 0]
@@ -119,25 +133,13 @@ class BenchmarkRunner:
         )
 
     def _production_engine(self, session: ResearchSession) -> StrategyBenchmark:
-        """Benchmark the replay engine with technical factors only.
-
-        Historical funding / basis / OI-delta / orderbook-imbalance values are not
-        reconstructible from the current free-data research session inputs. The
-        benchmark row is therefore labelled explicitly as technical-only so it is
-        not mistaken for a like-for-like replay of live cross-exchange behaviour.
-        """
         log.warning(
             "research.benchmark.production_engine_limited",
             symbol=session.symbol,
             timeframe=session.timeframe.value,
             limitation="historical cross-exchange factors unavailable; benchmark is technical-only",
         )
-        result = simulate(
-            session.candles,
-            session.timeframe,
-            factor_overrides_list=[{}] * len(session.candles),
-            settings=session.settings,
-        )
+        result = simulate(session.candles, session.timeframe, factor_overrides_list=[{}] * len(session.candles), settings=session.settings)
         closed = [t.pnl_bps for t in result.trades if t.exit_price is not None]
         series = pd.Series(closed, dtype=float)
         return StrategyBenchmark(

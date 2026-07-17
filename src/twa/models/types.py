@@ -35,6 +35,23 @@ class Timeframe(str, Enum):
     D1 = "1d"
 
 
+class SignalEntryState(str, Enum):
+    ENTER_NOW = "enter_now"
+    WAIT = "wait"
+    STALE = "stale"
+
+
+class SignalLifecycleState(str, Enum):
+    DETECTED = "DETECTED"
+    ACTIVE = "ACTIVE"
+    TP1_HIT = "TP1_HIT"
+    TP2_HIT = "TP2_HIT"
+    TP3_HIT = "TP3_HIT"
+    STOPPED = "STOPPED"
+    EXITED_EARLY = "EXITED_EARLY"
+    EXPIRED = "EXPIRED"
+
+
 def coerce_timeframe(value: Timeframe | str) -> Timeframe:
     """Normalise user/config input to the canonical Timeframe enum."""
     if isinstance(value, Timeframe):
@@ -138,9 +155,9 @@ class FactorContribution(BaseModel):
 
     name: str
     raw_value: float
-    norm_value: float  # in [-1, +1]
+    norm_value: float
     weight: float
-    contribution: float  # weight * norm_value
+    contribution: float
     rationale: str
 
 
@@ -164,10 +181,10 @@ class SignalIdea(BaseModel):
     timeframe: Timeframe
     side: Side
     regime: RegimeLabel
-    confidence: float  # 0..1
+    confidence: float
     expected_edge_bps: float
-    entry_zone: List[float]  # [low, high]
-    targets: List[float]  # TP levels
+    entry_zone: List[float]
+    targets: List[float]
     invalidation: float
     rationale: List[str]
     factor_contributions: List[FactorContribution]
@@ -175,3 +192,15 @@ class SignalIdea(BaseModel):
     news_events: List[NewsEvent] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     expires_at: Optional[datetime] = None
+
+    raw_confidence: Optional[float] = None
+    ml_calibration: float = 1.0
+    final_confidence: Optional[float] = None
+    basis: float = 0.0
+    oi_delta: float = 0.0
+    fair_value: Optional[float] = None
+    fair_value_gap_atr: Optional[float] = None
+    entry_state: SignalEntryState = SignalEntryState.ENTER_NOW
+    entry_trigger: str = "immediate"
+    max_wait_bars: int = 0
+    lifecycle_state: SignalLifecycleState = SignalLifecycleState.DETECTED

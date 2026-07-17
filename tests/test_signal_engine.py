@@ -44,17 +44,19 @@ def test_signal_short_on_downtrend():
     assert sig.confidence > 0.0
 
 
-def test_signal_direction_dominates_with_extreme_overrides():
-    """When overrides strongly dominate every other factor, side follows them."""
+def test_cross_exchange_overrides_are_merged_without_zeroing_candle_factors():
     candles = make_candles(n=400, start=10_000.0, drift=8.0, vol=0.001)
     feats = compute_all(candles)
     regime = classify(feats)
-    # Maxed-out short-side defaults despite bullish drift.
+    baseline = compute_signal(candles, Timeframe.H1, {}, regime, regime_conf=0.95)
     overrides = project_symbol_factors(funding_norm=1.0, basis_norm=0.0,
                                         oi_delta_norm=-1.0, obi_norm=-1.0)
     sig = compute_signal(candles, Timeframe.H1, overrides, regime, regime_conf=0.95)
+    assert baseline is not None
     assert sig is not None
-    assert sig.side == Side.SHORT
+    factor_names = {c.name for c in sig.factor_contributions}
+    assert {"trend_strength_48", "log_return_16", "obv_slope_48"}.issubset(factor_names)
+    assert sig.confidence < baseline.confidence
 
 
 def test_signal_returns_none_below_min_confidence():

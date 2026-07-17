@@ -56,6 +56,19 @@ class Settings(BaseSettings):
     risk_news_dampen: float = 0.5
     risk_cooldown_s: int = 900
 
+    backtest_fee_bps: float = 6.0
+    backtest_slippage_bps: float = 2.0
+    backtest_funding_bps_per_hour: float = 0.5
+    backtest_min_bars_between_signals: int = 1
+
+    sniper_enabled: bool = True
+    sniper_max_wait_bars: int = 2
+    sniper_fair_value_band_atr: float = 0.35
+    sniper_confirmation_close_band_atr: float = 0.15
+
+    lifecycle_poll_interval_s: int = 30
+    signal_outcomes_db_path: Path = Field(default=Path("./data/signal_outcomes.sqlite3"))
+
     @field_validator("symbols", "exchanges", "news_sources", mode="before")
     @classmethod
     def _split_csv(cls, v):
@@ -69,6 +82,16 @@ class Settings(BaseSettings):
     @classmethod
     def _positive(cls, v: int) -> int:
         return max(50, min(5000, int(v)))
+
+    @field_validator("backtest_fee_bps", "backtest_slippage_bps", "backtest_funding_bps_per_hour")
+    @classmethod
+    def _non_negative_float(cls, v: float) -> float:
+        return max(0.0, float(v))
+
+    @field_validator("backtest_min_bars_between_signals", "sniper_max_wait_bars", "lifecycle_poll_interval_s")
+    @classmethod
+    def _non_negative_int(cls, v: int) -> int:
+        return max(0, int(v))
 
 
 def get_settings() -> Settings:

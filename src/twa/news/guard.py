@@ -14,13 +14,14 @@ import hashlib
 import math
 import re
 import time
-from collections import OrderedDict, deque
+from collections import OrderedDict, defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import feedparser
 import httpx
+import numpy as np
 from pydantic import BaseModel, Field
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -45,11 +46,10 @@ _CRYPTO_PANIC_URL = "https://cryptopanic.com/api/v1/posts/"
 _FEAR_GREED_URL = "https://api.alternative.me/fng/"
 _FRED_VIX_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS"
 _STATUS_PAGES: Dict[str, str] = {
-    "BINANCE": "https://www.binance.com/en/support/announcement",
+    "BINANCE": "https://www.binance.com/en/support/announcement/list/51",
     "BYBIT": "https://announcements.bybit.com/",
-    "OKX": "https://www.okx.com/help/announcements",
-    "HYPERLIQUID": "https://status.hyperliquid.xyz/",
-    "DERIBIT": "https://status.deribit.com/",
+    "OKX": "https://www.okx.com/en-us/status",
+    "HYPERLIQUID": "https://hyperliquid.statuspage.io/",
 }
 
 _STOP_WORDS = {
@@ -235,6 +235,116 @@ class RollingHealth:
             self._events.popleft()
 
 
+class MacroCalendar:
+    """Free-tier, maintained macro schedule with pre-emptive risk windows.
+
+    The schedule is intentionally explicit and easy to update in-place. It is
+    not a paid calendar API dependency. Entries cover the highest-impact US
+    macro releases the strategy explicitly cares about.
+    """
+
+    _STATIC_EVENTS: Sequence[Tuple[str, str, datetime]] = (
+        ("FOMC", "fomc", datetime(2026, 7, 29, 18, 0, tzinfo=timezone.utc)),
+        ("CPI", "cpi", datetime(2026, 8, 12, 12, 30, tzinfo=timezone.utc)),
+        ("PPI", "ppi", datetime(2026, 8, 13, 12, 30, tzinfo=timezone.utc)),
+        ("NFP", "nfp", datetime(2026, 8, 7, 12, 30, tzinfo=timezone.utc)),
+        ("CORE_PCE", "core_pce", datetime(2026, 7, 31, 12, 30, tzinfo=timezone.utc)),
+        ("GDP", "gdp", datetime(2026, 7, 30, 12, 30, tzinfo=timezone.utc)),
+        ("FOMC", "fomc", datetime(2026, 9, 16, 18, 0, tzinfo=timezone.utc)),
+        ("CPI", "cpi", datetime(2026, 9, 11, 12, 30, tzinfo=timezone.utc)),
+        ("NFP", "nfp", datetime(2026, 9, 4, 12, 30, tzinfo=timezone.utc)),
+        ("CORE_PCE", "core_pce", datetime(2026, 8, 28, 12, 30, tzinfo=timezone.utc)),
+        ("GDP", "gdp", datetime(2026, 8, 27, 12, 30, tzinfo=timezone.utc)),
+        ("FOMC", "fomc", datetime(2026, 11, 5, 19, 0, tzinfo=timezone.utc)),
+        ("FOMC", "fomc", datetime(2026, 12, 16, 19, 0, tzinfo=timezone.utc)),
+    )
+
+    _SEVERITY = {"fomc": 0.95, "cpi": 0.85, "ppi": 0.70, "nfp": 0.90, "core_pce": 0.85, "gdp": 0.75}
+
+    def __init__(self) -> None:
+        self.events = list(self._STATIC_EVENTS)
+
+    def upcoming(self, now: Optional[datetime] = None, within_hours: int = 24) -> List[Tuple[str, str, datetime]]:
+        ts_now = now or _utcnow()
+        horizon = ts_now + timedelta(hours=within_hours)
+        return [event for event in self.events if ts_now <= event[2] <= horizon]
+
+    def preemptive_events(self, now: Optional[datetime] = None) -> List[RawNewsItem]:
+        ts_now = now or _utcnow()
+        out: List[RawNewsItem] = []
+        for title, key, release_at in self.upcoming(ts_now, within_hours=24):
+            hours = max(0.0, (release_at - ts_now).total_seconds() / 3600.0)
+            severity = self._SEVERITY.get(key, 0.75)
+            summary = f"{title} scheduled in {hours:.1f} hours"
+            out.append(
+                RawNewsItem(
+                    title=f"Macro calendar: {title} release scheduled in {hours:.1f}h",
+                    source="macro_calendar",
+                    url="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" if key == "fomc" else "https://www.bls.gov/schedule/news_release/cpi.htm",
+                    published_at=ts_now,
+                    summary=summary,
+                    metadata={"macro_release_at": release_at.isoformat(), "macro_key": key, "macro_severity": severity},
+                )
+            )
+        return out
+
+
+class SourceReliabilityTracker:
+    """Decaying per-source reliability multiplier."""
+
+    def __init__(self, decay: float = 0.97) -> None:
+        self.decay = decay
+        self._stats: Dict[str, Tuple[float, float]] = {}
+
+    def multiplier(self, source: str) -> float:
+        success, total = self._stats.get(source.lower(), (3.0, 3.0))
+        acc = success / max(total, 1e-9)
+        return float(min(1.10, max(0.60, 0.75 + 0.35 * acc)))
+
+    def record_confirmation(self, sources: Sequence[str]) -> None:
+        for source in sources:
+            s, t = self._stats.get(source.lower(), (3.0, 3.0))
+            self._stats[source.lower()] = (s * self.decay + 1.0, t * self.decay + 1.0)
+
+    def record_contradiction(self, sources: Sequence[str]) -> None:
+        for source in sources:
+            s, t = self._stats.get(source.lower(), (3.0, 3.0))
+            self._stats[source.lower()] = (s * self.decay + 0.0, t * self.decay + 1.0)
+
+
+class HistoricalSimilarityTracker:
+    """Bounded rolling history of category-level observed impact summaries."""
+
+    def __init__(self, max_per_category: int = 64) -> None:
+        self.max_per_category = max_per_category
+        self._history: Dict[str, Deque[Dict[str, float]]] = defaultdict(lambda: deque(maxlen=max_per_category))
+        self._pending: Dict[str, Dict[str, Any]] = {}
+
+    def track_event(self, event: EventRecord) -> None:
+        self._pending[event.id] = {
+            "category": event.category,
+            "symbols": list(event.affected_symbols),
+            "started_at": event.first_seen_at,
+        }
+
+    def resolve_event(self, event_id: str, observed_impact_bps: float, duration_h: float) -> None:
+        pending = self._pending.pop(event_id, None)
+        if pending is None:
+            return
+        self._history[pending["category"]].append({"impact_bps": float(observed_impact_bps), "duration_h": float(duration_h)})
+
+    def summary(self, category: str) -> Dict[str, Any]:
+        rows = list(self._history.get(category, []))
+        if len(rows) < 3:
+            return {"samples": len(rows), "status": "insufficient_history"}
+        return {
+            "samples": len(rows),
+            "typical_impact_bps": round(sum(r["impact_bps"] for r in rows) / len(rows), 2),
+            "typical_duration_h": round(sum(r["duration_h"] for r in rows) / len(rows), 2),
+            "status": "ok",
+        }
+
+
 class EntityExtractor:
     def extract(self, text: str) -> Tuple[List[str], List[str]]:
         clean = _normalise_text(text)
@@ -309,8 +419,8 @@ class EventNormalizer:
         summary = item.summary.strip()[:800]
         merged = _normalise_text(f"{title} {summary}")
         symbols, entities = self.entities.extract(merged)
-        category = self._categorize(merged)
-        severity = self._severity(merged, category)
+        category = EventCategory.MACRO if item.source == "macro_calendar" else self._categorize(merged)
+        severity = float(item.metadata.get("macro_severity", self._severity(merged, category)))
         sentiment = self._sentiment(merged, category)
         confidence = self._initial_confidence(item.source, symbols, entities, category)
         affected_nodes = sorted(set(symbols + entities))
@@ -459,6 +569,34 @@ class EventGraph:
     def add_edge(self, source: str, target: str, weight: float) -> None:
         self.edges.setdefault(source, {})[target] = float(max(0.0, min(1.0, weight)))
 
+    def update_market_correlations(self, price_history: Dict[str, Sequence[float]], window: int = 96) -> None:
+        """Refresh cross-asset propagation weights from rolling realized correlations."""
+        symbols = [symbol for symbol, prices in price_history.items() if len(prices) >= max(8, window // 4)]
+        if len(symbols) < 2:
+            return
+        returns: Dict[str, List[float]] = {}
+        for symbol in symbols:
+            prices = np.asarray(price_history[symbol][-window:], dtype=float)
+            if len(prices) < 3 or np.any(prices <= 0):
+                continue
+            rets = np.diff(np.log(prices))
+            if len(rets) >= 3:
+                returns[symbol] = rets.tolist()
+        symbols = list(returns)
+        for left in symbols:
+            for right in symbols:
+                if left == right:
+                    continue
+                common = min(len(returns[left]), len(returns[right]))
+                if common < 8:
+                    continue
+                corr = float(np.corrcoef(returns[left][-common:], returns[right][-common:])[0, 1])
+                if math.isnan(corr):
+                    continue
+                weight = max(0.0, min(0.98, abs(corr)))
+                if weight >= 0.25:
+                    self.add_edge(left, right, weight)
+
     def impact_weights(self, seeds: Sequence[str], *, max_hops: int = 3, hop_decay: float = 0.72) -> Dict[str, float]:
         out: Dict[str, float] = {}
         frontier: List[Tuple[str, float, int]] = [(seed, 1.0, 0) for seed in seeds]
@@ -554,13 +692,17 @@ class TimeDecayEngine:
 
 
 class ConfidenceEngine:
+    def __init__(self, reliability: Optional[SourceReliabilityTracker] = None) -> None:
+        self.reliability = reliability or SourceReliabilityTracker()
+
     def score(self, event: EventRecord) -> float:
         sources = {ev.source.lower() for ev in event.evidence}
         diversity = min(0.18, 0.06 * max(0, len(sources) - 1))
         mentions = min(0.15, 0.03 * max(0, event.mention_count - 1))
         specificity = 0.05 if event.affected_symbols else 0.0
         category_bonus = 0.04 if event.category != EventCategory.GENERAL_MARKET else -0.02
-        return float(min(0.99, max(0.25, event.confidence + diversity + mentions + specificity + category_bonus)))
+        reliability = np.mean([self.reliability.multiplier(source) for source in sources]) if sources else 1.0
+        return float(min(0.99, max(0.20, (event.confidence + diversity + mentions + specificity + category_bonus) * reliability)))
 
 
 class EventMemory:
@@ -572,12 +714,16 @@ class EventMemory:
         max_evidence_per_event: int = _MAX_EVIDENCE_PER_EVENT,
         decay_engine: Optional[TimeDecayEngine] = None,
         confidence_engine: Optional[ConfidenceEngine] = None,
+        reliability: Optional[SourceReliabilityTracker] = None,
+        history: Optional[HistoricalSimilarityTracker] = None,
     ) -> None:
         self.max_events = max_events
         self.ttl_s = ttl_s
         self.max_evidence_per_event = max_evidence_per_event
         self.decay_engine = decay_engine or TimeDecayEngine()
-        self.confidence_engine = confidence_engine or ConfidenceEngine()
+        self.reliability = reliability or SourceReliabilityTracker()
+        self.confidence_engine = confidence_engine or ConfidenceEngine(self.reliability)
+        self.history = history or HistoricalSimilarityTracker()
         self.events: "OrderedDict[str, EventRecord]" = OrderedDict()
         self.dedup_cache: Deque[str] = deque(maxlen=_MAX_DEDUP_CACHE)
 
@@ -594,6 +740,7 @@ class EventMemory:
         self.events[event.id] = event
         self.events.move_to_end(event.id)
         self.dedup_cache.append(event.fingerprint)
+        self.history.track_event(event)
         self.prune(ts_now)
         return event
 
@@ -642,6 +789,13 @@ class EventMemory:
             base.peak_at = now
         base.confidence = self.confidence_engine.score(base)
         self._transition(base, now)
+        sources = [ev.source for ev in base.evidence]
+        if base.state in {EventLifecycle.CONFIRMED, EventLifecycle.ESCALATING, EventLifecycle.PEAK}:
+            self.reliability.record_confirmation(sources)
+        if base.resolved_at is not None:
+            duration_h = max(0.0, (base.resolved_at - base.first_seen_at).total_seconds() / 3600.0)
+            observed_impact_bps = float(base.severity * base.sentiment * 100.0)
+            self.history.resolve_event(base.id, observed_impact_bps, duration_h)
         return base
 
     def _transition(self, event: EventRecord, now: datetime) -> None:
@@ -741,6 +895,7 @@ class TelegramFormatter:
 class EventCollector:
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.macro_calendar = MacroCalendar()
 
     async def collect(self) -> List[RawNewsItem]:
         tasks = [self._fetch_rss()]
@@ -758,6 +913,7 @@ class EventCollector:
                 log.warning("news.collector.task_failed", err=str(result))
                 continue
             items.extend(result)
+        items.extend(self.macro_calendar.preemptive_events())
         return items
 
     @retry(
@@ -855,7 +1011,16 @@ class EventCollector:
         try:
             text = await self._get_text(_FRED_VIX_URL)
             rows = list(csv.DictReader(text.splitlines()))
-            values = [float(r["VIXCLS"]) for r in rows if r.get("VIXCLS") not in {None, "."}]
+            values: List[float] = []
+            last_valid: Optional[float] = None
+            for row in rows:
+                raw = (row.get("VIXCLS") or "").strip()
+                if raw in {"", "."}:
+                    if last_valid is not None:
+                        values.append(last_valid)
+                    continue
+                last_valid = float(raw)
+                values.append(last_valid)
         except Exception as exc:  # noqa: BLE001
             log.warning("news.fred.fetch_failed", err=str(exc))
             return []
@@ -927,11 +1092,14 @@ class NewsGuard:
         self.matcher = DuplicateDetector()
         self.graph = EventGraph()
         self.decay = TimeDecayEngine()
-        self.memory = EventMemory(decay_engine=self.decay)
+        self.reliability = SourceReliabilityTracker()
+        self.history = HistoricalSimilarityTracker()
+        self.memory = EventMemory(decay_engine=self.decay, reliability=self.reliability, history=self.history)
         self.impact = ImpactEngine(self.graph, self.decay)
         self.formatter = TelegramFormatter()
         self.health_tracker = RollingHealth()
         self._last_fetch: float = 0.0
+        self._price_history: Dict[str, Deque[float]] = defaultdict(lambda: deque(maxlen=128))
 
     async def refresh(self) -> None:
         if not self.settings.news_enabled:
@@ -975,6 +1143,7 @@ class NewsGuard:
             weights_by_id[event.id] = weight * self.decay.decay(event, now)
         relevant.sort(key=lambda event: weights_by_id.get(event.id, 0.0), reverse=True)
         assessment = self.impact.assess(symbol, relevant, now=now)
+        self._log_decision(symbol, assessment)
         return assessment.confidence_multiplier, [self._surface_event(event) for event in relevant[:8]]
 
     def health(self) -> Dict[str, Any]:
@@ -995,6 +1164,10 @@ class NewsGuard:
         return counts
 
     def _surface_event(self, event: EventRecord) -> NewsEvent:
+        hist = self.history.summary(event.category)
+        category = f"{event.category}:{event.state}"
+        if hist.get("status") == "ok":
+            category += f":hist_{hist['typical_impact_bps']}bps_{hist['typical_duration_h']}h"
         return NewsEvent(
             title=event.title,
             source=event.source_primary,
@@ -1003,8 +1176,38 @@ class NewsGuard:
             symbols=list(event.affected_symbols),
             severity=float(event.severity),
             sentiment=float(event.sentiment),
-            category=f"{event.category}:{event.state}",
+            category=category,
         )
+
+    def surface_events(self, symbol: str) -> List[NewsEvent]:
+        _, events = self.dampen_for(symbol)
+        return events
+
+    def update_market_context(self, symbol: str, candles: Sequence[Any]) -> None:
+        closes = [float(getattr(candle, 'close', 0.0)) for candle in candles if getattr(candle, 'close', None) is not None]
+        if closes:
+            self._price_history[symbol].extend(closes[-32:])
+            self.graph.update_market_correlations({k: list(v) for k, v in self._price_history.items()})
+
+    def _log_decision(self, symbol: str, assessment: ImpactAssessment) -> None:
+        try:
+            path = self.settings.data_dir / "news_guard_decisions.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as f:
+                f.write(
+                    '{"ts":"%s","symbol":"%s","confidence_multiplier":%.6f,"risk_multiplier":%.6f,"suppressed":%s,"cancelled":%s,"reasons":%s}\n'
+                    % (
+                        _utcnow().isoformat(),
+                        symbol,
+                        assessment.confidence_multiplier,
+                        assessment.risk_multiplier,
+                        str(assessment.signal_suppressed).lower(),
+                        str(assessment.signal_cancelled).lower(),
+                        repr(assessment.reasons),
+                    )
+                )
+        except Exception:
+            return None
 
 
 def _utcnow() -> datetime:

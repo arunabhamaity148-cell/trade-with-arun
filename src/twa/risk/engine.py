@@ -1,14 +1,9 @@
 """Institutional-quality risk framework.
 
-Responsibilities
-----------------
-* Cooldowns between signals for the same symbol+side to avoid overtrading.
-* Confidence calibration against volatility (lower confidence when realised vol spikes).
-* Adaptive stops using ATR-based invalidation already in the signal engine.
-* Exposure protection at the orchestrator level (max signals active simultaneously).
-* Signal *invalidation* — reject stale, low-quality, or noisy signals.
-
-This module is purely *advisory* — it never places orders.
+This module is purely advisory — it never places orders. It is the single
+place where raw signal confidence is transformed into publishable confidence.
+Pipeline: raw score-derived confidence -> regime/high-vol caps -> news dampen
+-> ML calibration -> final threshold.
 """
 from __future__ import annotations
 
@@ -21,6 +16,8 @@ from twa.logging import get_logger
 from twa.models.types import SignalIdea
 
 log = get_logger("risk")
+
+_MIN_PUBLISHABLE_CONFIDENCE = 0.20
 
 
 @dataclass
@@ -47,6 +44,8 @@ class RiskVerdict:
     adjusted_confidence: float
     news_dampen_applied: float = 1.0
     ml_calibration_applied: float = 1.0
+    raw_confidence: float = 0.0
+    post_regime_confidence: float = 0.0
 
 
 class RiskEngine:
@@ -68,39 +67,31 @@ class RiskEngine:
         max_active: int = 5,
         current_ts: Optional[float] = None,
     ) -> RiskVerdict:
-        """Return whether to accept (publish) a candidate signal.
-
-        `current_ts` is optional to preserve live behaviour while allowing replay/
-        backtest callers to evaluate cooldowns against a simulated timeline.
-        """
-
+        """Return whether to accept (publish) a candidate signal."""
         cd_key = f"{sig.symbol}|{sig.timeframe}|{sig.side.value}"
         if not self.cooldowns.is_cool(cd_key, self.settings.risk_cooldown_s, now=current_ts):
-            return RiskVerdict(False, "cooldown active", sig.confidence)
+            return RiskVerdict(False, "cooldown active", sig.confidence, raw_confidence=sig.confidence, post_regime_confidence=sig.confidence)
 
-        if sig.confidence > self.settings.risk_max_confidence:
-            sig_adjusted = float(self.settings.risk_max_confidence)
-        else:
-            sig_adjusted = sig.confidence
-
-        # Stress regime → cap very tightly.
+        raw_conf = float(sig.raw_confidence if sig.raw_confidence is not None else sig.confidence)
+        sig_adjusted = min(float(self.settings.risk_max_confidence), raw_conf)
         if stressed_regime:
             sig_adjusted = min(sig_adjusted, 0.35)
-
         if high_volatility:
-            sig_adjusted *= 0.75  # soft dampener
+            sig_adjusted *= 0.75
 
-        # News dampen must always be ≤ 1.
         nd = float(min(1.0, max(0.1, news_dampen)))
-        calibrated = min(self.settings.risk_max_confidence, sig_adjusted * nd * float(ml_calibration))
+        ml = float(min(1.25, max(0.1, ml_calibration)))
+        calibrated = min(float(self.settings.risk_max_confidence), sig_adjusted * nd * ml)
 
-        if calibrated < 0.20:
+        if calibrated < _MIN_PUBLISHABLE_CONFIDENCE:
             return RiskVerdict(
                 False,
                 "calibrated_confidence_below_threshold",
                 calibrated,
                 nd,
-                ml_calibration,
+                ml,
+                raw_confidence=raw_conf,
+                post_regime_confidence=sig_adjusted,
             )
 
         if len(self.active_ids) >= max_active:
@@ -109,10 +100,11 @@ class RiskEngine:
                 "max_active_signals_reached",
                 calibrated,
                 nd,
-                ml_calibration,
+                ml,
+                raw_confidence=raw_conf,
+                post_regime_confidence=sig_adjusted,
             )
 
-        # OK → accept & mark
         self.cooldowns.mark(cd_key, now=current_ts)
         self.active_ids.append(sig.id)
         if len(self.active_ids) > max_active:
@@ -123,9 +115,13 @@ class RiskEngine:
             symbol=sig.symbol,
             side=sig.side.value,
             regime=sig.regime.value,
+            raw_confidence=round(raw_conf, 3),
+            post_regime_confidence=round(sig_adjusted, 3),
+            news_dampen=round(nd, 3),
+            ml_calibration=round(ml, 3),
             confidence=round(calibrated, 3),
         )
-        return RiskVerdict(True, "ok", calibrated, nd, ml_calibration)
+        return RiskVerdict(True, "ok", calibrated, nd, ml, raw_confidence=raw_conf, post_regime_confidence=sig_adjusted)
 
     def invalidate(self, sig_id: str, reason: str) -> None:
         if sig_id in self.active_ids:
