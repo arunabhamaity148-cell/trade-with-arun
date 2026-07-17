@@ -110,8 +110,8 @@ class EngineConfig:
     expiry_bars_multiplier: float = 0.75
     fair_value_ema_span: int = 20
     fair_value_gap_wait_atr: float = 0.35
-    fair_value_confirm_band_atr: float = 0.15
-    sniper_max_wait_bars: int = 2
+    fair_value_confirm_band_atr: float = 0.10
+    sniper_max_wait_bars: int = 4
 
 
 DEFAULT_CFG = EngineConfig()
