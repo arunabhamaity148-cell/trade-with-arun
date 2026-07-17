@@ -18,7 +18,7 @@ from typing import Dict, List, Optional
 
 from twa.config import Settings
 from twa.logging import get_logger
-from twa.models.types import RegimeLabel, SignalIdea, Timeframe
+from twa.models.types import SignalIdea
 
 log = get_logger("risk")
 
@@ -26,17 +26,18 @@ log = get_logger("risk")
 @dataclass
 class CooldownBook:
     """In-memory map of (symbol, side) → earliest next-signal epoch."""
+
     _last: Dict[str, float] = field(default_factory=dict)
 
-    def is_cool(self, key: str, cooldown_s: int) -> bool:
-        now = time.time()
+    def is_cool(self, key: str, cooldown_s: int, *, now: Optional[float] = None) -> bool:
+        ts_now = time.time() if now is None else float(now)
         ts = self._last.get(key)
         if ts is None:
             return True
-        return (now - ts) >= cooldown_s
+        return (ts_now - ts) >= cooldown_s
 
-    def mark(self, key: str) -> None:
-        self._last[key] = time.time()
+    def mark(self, key: str, *, now: Optional[float] = None) -> None:
+        self._last[key] = time.time() if now is None else float(now)
 
 
 @dataclass(frozen=True)
@@ -65,11 +66,16 @@ class RiskEngine:
         high_volatility: bool,
         stressed_regime: bool,
         max_active: int = 5,
+        current_ts: Optional[float] = None,
     ) -> RiskVerdict:
-        """Return whether to accept (publish) a candidate signal."""
+        """Return whether to accept (publish) a candidate signal.
+
+        `current_ts` is optional to preserve live behaviour while allowing replay/
+        backtest callers to evaluate cooldowns against a simulated timeline.
+        """
 
         cd_key = f"{sig.symbol}|{sig.timeframe}|{sig.side.value}"
-        if not self.cooldowns.is_cool(cd_key, self.settings.risk_cooldown_s):
+        if not self.cooldowns.is_cool(cd_key, self.settings.risk_cooldown_s, now=current_ts):
             return RiskVerdict(False, "cooldown active", sig.confidence)
 
         if sig.confidence > self.settings.risk_max_confidence:
@@ -89,21 +95,36 @@ class RiskEngine:
         calibrated = min(self.settings.risk_max_confidence, sig_adjusted * nd * float(ml_calibration))
 
         if calibrated < 0.20:
-            return RiskVerdict(False, "calibrated_confidence_below_threshold",
-                               calibrated, nd, ml_calibration)
+            return RiskVerdict(
+                False,
+                "calibrated_confidence_below_threshold",
+                calibrated,
+                nd,
+                ml_calibration,
+            )
 
         if len(self.active_ids) >= max_active:
-            return RiskVerdict(False, "max_active_signals_reached",
-                               calibrated, nd, ml_calibration)
+            return RiskVerdict(
+                False,
+                "max_active_signals_reached",
+                calibrated,
+                nd,
+                ml_calibration,
+            )
 
         # OK → accept & mark
-        self.cooldowns.mark(cd_key)
+        self.cooldowns.mark(cd_key, now=current_ts)
         self.active_ids.append(sig.id)
         if len(self.active_ids) > max_active:
             self.active_ids = self.active_ids[-max_active:]
 
-        log.info("risk.accept", symbol=sig.symbol, side=sig.side.value,
-                 regime=sig.regime.value, confidence=round(calibrated, 3))
+        log.info(
+            "risk.accept",
+            symbol=sig.symbol,
+            side=sig.side.value,
+            regime=sig.regime.value,
+            confidence=round(calibrated, 3),
+        )
         return RiskVerdict(True, "ok", calibrated, nd, ml_calibration)
 
     def invalidate(self, sig_id: str, reason: str) -> None:
