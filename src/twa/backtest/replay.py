@@ -251,14 +251,18 @@ def _realise(
     settings = settings or Settings(_env_file=None)
     if not future:
         px = float(entry_price if entry_price is not None else sig.entry_zone[0])
+        reference_price = (float(sig.entry_zone[0]) + float(sig.entry_zone[1])) / 2.0
+        price_shift = px - reference_price
+        adj_invalidation = float(sig.invalidation) + price_shift
+        adj_targets = [float(t) + price_shift for t in sig.targets]
         return TradeRecord(
             symbol=sig.symbol,
             timeframe=sig.timeframe.value,
             side=sig.side,
             entry_time=datetime.now(tz=timezone.utc),
             entry_price=px,
-            invalidation=sig.invalidation,
-            targets=list(sig.targets),
+            invalidation=float(adj_invalidation),
+            targets=list(adj_targets),
             confidence=sig.confidence,
             regime=sig.regime,
             exit_reason="no_data",
@@ -267,6 +271,31 @@ def _realise(
     direction = 1 if sig.side == Side.LONG else -1
     raw_entry = float(entry_price if entry_price is not None else future[0].open)
     entry_exec = _apply_slippage(raw_entry, direction=direction, side="entry", slippage_bps=settings.backtest_slippage_bps)
+
+    # Re-anchor invalidation/targets to the ACTUAL fill price.
+    #
+    # sig.invalidation and sig.targets were computed in signal/engine.py
+    # relative to the price at signal-detection time (`last_close`), not
+    # relative to wherever the trade actually fills. When sniper_entry is
+    # enabled, `_resolve_entry` can delay the fill by up to
+    # `max_wait_bars` while waiting for a pullback to fair value -- by the
+    # time the trade fills, price can be a full ATR or more away from the
+    # original detection price. Left un-anchored, the stop/targets stay
+    # pinned to the old price and can end up on the wrong side of the new
+    # entry (e.g. a LONG's stop sitting ABOVE the actual fill price),
+    # which triggers a near-immediate stop-out on almost every delayed
+    # entry. `entry_zone` is symmetric around the original `last_close`
+    # (entry_zone = last_close * (1 -+ entry_zone_atr * atr_pct)), so its
+    # midpoint exactly recovers that original reference price without
+    # needing a new field on SignalIdea. We then apply a parallel price
+    # shift (fill price - original reference price) to invalidation and
+    # every target, which preserves the original ATR-based distances
+    # exactly while moving their origin to where the trade actually
+    # started.
+    reference_price = (float(sig.entry_zone[0]) + float(sig.entry_zone[1])) / 2.0
+    price_shift = raw_entry - reference_price
+    adj_invalidation = float(sig.invalidation) + price_shift
+    adj_targets = [float(t) + price_shift for t in sig.targets]
 
     mfe = 0.0
     mae = 0.0
@@ -279,7 +308,7 @@ def _realise(
     realized_fee_bps = settings.backtest_fee_bps
     realized_slippage_bps = settings.backtest_slippage_bps
     hit_targets = 0
-    effective_stop = float(sig.invalidation)
+    effective_stop = adj_invalidation
 
     for j, bar in enumerate(future):
         move = (bar.close - entry_exec) * direction
@@ -298,7 +327,7 @@ def _realise(
                 break
 
         stop_hit = (direction == 1 and bar.low <= effective_stop) or (direction == -1 and bar.high >= effective_stop)
-        target_hit = _first_target_hit(sig.targets, bar, direction, hit_targets + 1)
+        target_hit = _first_target_hit(adj_targets, bar, direction, hit_targets + 1)
 
         if stop_hit and target_hit is not None:
             if INTRABAR_CONFLICT_RESOLUTION == "stop_first":
@@ -343,8 +372,8 @@ def _realise(
         side=sig.side,
         entry_time=future[0].open_time,
         entry_price=float(entry_exec),
-        invalidation=sig.invalidation,
-        targets=list(sig.targets),
+        invalidation=float(adj_invalidation),
+        targets=list(adj_targets),
         confidence=sig.confidence,
         regime=sig.regime,
         exit_time=future[exit_i].open_time if future else None,

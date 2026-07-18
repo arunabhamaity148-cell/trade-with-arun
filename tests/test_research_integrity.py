@@ -112,4 +112,5 @@ def test_intrabar_conflict_resolution_is_explicitly_stop_first():
     trade = _realise(sig, future)
     assert INTRABAR_CONFLICT_RESOLUTION == "stop_first"
     assert trade.exit_reason == "invalidation"
-    assert trade.exit_price == sig.invalidation
+    assert trade.exit_price == trade.invalidation
+    assert trade.invalidation != sig.invalidation
