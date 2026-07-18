@@ -1,15 +1,9 @@
-new	reports/PHASE0_PHASE1_SUMMARY.md
-new	reports/changes.diff
-new	reports/file_manifest.txt
-new	reports/final_metrics.json
-new	reports/phase0_variant_results.json
-modified	src/twa/regime/classifier.py
-modified	src/twa/research/benchmarking.py
-modified	src/twa/research/calibration_pipeline.py
-modified	src/twa/research/edge_validation.py
-modified	src/twa/research/lab.py
-new	src/twa/research/labels.py
-new	src/twa/research/point_in_time.py
-modified	src/twa/research/walk_forward.py
-new	tests/research/test_point_in_time_harness.py
-modified	tests/test_signal_engine.py
+src/twa/cli/main.py
+src/twa/orchestration/engine.py
+src/twa/research/benchmarking.py
+src/twa/signal/engine.py
+src/twa/signal/lifecycle.py
+src/twa/signal/store.py
+tests/test_production_audit_regressions.py
+reports/production_audit_metrics.json
+reports/v25_production_audit_summary.md

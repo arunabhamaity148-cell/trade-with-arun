@@ -12,10 +12,11 @@ It does NOT place orders.
 from __future__ import annotations
 
 import asyncio
+import json
 import signal
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from twa.config import Settings, get_settings
 from twa.data.cache import MarketDataAggregator
@@ -23,12 +24,12 @@ from twa.features.cross_exchange import normalise_funding, oi_momentum, orderboo
 from twa.features.engineering import compute_all
 from twa.logging import get_logger
 from twa.ml.calibrator import ConfidenceCalibrator, IdentityCalibrator
-from twa.models.types import FundingRate, OpenInterest, OrderBook, RegimeLabel, SignalIdea, Timeframe, Ticker, coerce_timeframe
+from twa.models.types import FundingRate, OpenInterest, OrderBook, RegimeLabel, SignalEntryState, SignalIdea, Timeframe, coerce_timeframe
 from twa.monitoring.health import HealthMonitor
 from twa.news.guard import NewsGuard
 from twa.regime.classifier import classify, regime_confidence
 from twa.risk.engine import RiskEngine
-from twa.signal.engine import compute_signal
+from twa.signal.engine import compute_signal, engine_config_from_settings
 from twa.signal.lifecycle import SignalLifecycleManager
 from twa.signal.store import SignalOutcomeStore
 from twa.telegram.bot import TelegramBot
@@ -68,6 +69,7 @@ class Orchestrator:
     def __init__(self, settings: Optional[Settings] = None):
         self.settings = settings or get_settings()
         self.timeframe = coerce_timeframe(self.settings.timeframe)
+        self.engine_cfg = engine_config_from_settings(self.settings)
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.data = MarketDataAggregator(self.settings)
         self.news = NewsGuard(self.settings)
@@ -80,7 +82,7 @@ class Orchestrator:
         self.health = HealthMonitor(self.settings, self.data)
         self.telegram = TelegramBot(self.settings)
         self.store = SignalOutcomeStore(self.settings)
-        self.lifecycle = SignalLifecycleManager(self.store, self.telegram)
+        self.lifecycle = SignalLifecycleManager(self.store, self.telegram, risk_engine=self.risk)
         self._running = False
         self._signals_log: List[SignalIdea] = []
         self._oi_cache = OICache()
@@ -92,6 +94,7 @@ class Orchestrator:
         await self.telegram.start_command_loop()
         await self.lifecycle.start()
         self._install_signal_handlers()
+        self._update_telegram_context()
         log.info("orchestrator.started", symbols=self.settings.symbols, tf=self.timeframe.value)
 
     async def stop(self) -> None:
@@ -126,6 +129,7 @@ class Orchestrator:
                     await self.lifecycle.register_candidate(idea)
             except Exception as e:  # noqa: BLE001
                 log.warning("orchestrator.symbol_failed", symbol=symbol, err=str(e))
+        self._update_telegram_context()
 
     async def _one_symbol(self, symbol: str) -> Optional[SignalIdea]:
         candles = await self.data.fetch_candles(symbol, self.timeframe, limit=self.settings.lookback_bars)
@@ -167,7 +171,7 @@ class Orchestrator:
             log.info("orchestrator.signal_cancelled_by_news", symbol=symbol, reasons=assessment.reasons)
             return None
 
-        sig = compute_signal(candles, self.timeframe, overrides, regime=regime, regime_conf=reg_conf)
+        sig = compute_signal(candles, self.timeframe, overrides, regime=regime, regime_conf=reg_conf, cfg=self.engine_cfg)
         if sig is None:
             return None
         raw_conf = float(sig.raw_confidence if sig.raw_confidence is not None else sig.confidence)
@@ -191,6 +195,10 @@ class Orchestrator:
         sig.confidence = float(verdict.adjusted_confidence)
         sig.basis = float(basis)
         sig.oi_delta = float(oi_delta)
+        if not self.settings.sniper_enabled:
+            sig.entry_state = SignalEntryState.ENTER_NOW
+            sig.entry_trigger = "sniper_disabled"
+            sig.max_wait_bars = 0
         return sig
 
     async def _compute_basis(self, symbol: str) -> float:
@@ -244,6 +252,18 @@ class Orchestrator:
 
     def recent_signals(self, n: int = 10) -> List[SignalIdea]:
         return self._signals_log[-n:]
+
+    def _update_telegram_context(self) -> None:
+        app = getattr(self.telegram, "_app", None)
+        if app is None:
+            return
+        app.bot_data["signals"] = self.recent_signals(20)
+        app.bot_data["health"] = self.health.snapshot()
+        payload = self.settings.model_dump(mode="json")
+        for key in ("telegram_bot_token", "telegram_chat_id", "cryptopanic_public_key"):
+            if payload.get(key):
+                payload[key] = "***REDACTED***"
+        app.bot_data["config_text"] = json.dumps(payload, sort_keys=True)
 
     def _install_signal_handlers(self) -> None:
         if self._install_signal_handlers_requested:

@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 import numpy as np
 
+from twa.config import Settings
 from twa.features.engineering import FEATURE_CATALOGUE, candles_to_frame, compute_all
 from twa.logging import get_logger
 from twa.models.types import (
@@ -115,6 +116,23 @@ class EngineConfig:
 
 
 DEFAULT_CFG = EngineConfig()
+
+
+def engine_config_from_settings(settings: Settings, **overrides: float | int | None) -> EngineConfig:
+    """Project runtime Settings into the signal-engine config surface.
+
+    Several operational sniper controls live in `Settings` but the signal engine
+    previously ignored them and always ran with the hard-coded `DEFAULT_CFG`.
+    That made live/paper/backtest/research disagree with the operator's config.
+    """
+    cfg = replace(
+        DEFAULT_CFG,
+        fair_value_gap_wait_atr=float(settings.sniper_fair_value_band_atr),
+        fair_value_confirm_band_atr=float(settings.sniper_confirmation_close_band_atr),
+        sniper_max_wait_bars=int(settings.sniper_max_wait_bars),
+    )
+    clean = {key: value for key, value in overrides.items() if value is not None and hasattr(cfg, key)}
+    return replace(cfg, **clean) if clean else cfg
 
 
 def project_symbol_factors(

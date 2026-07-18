@@ -24,12 +24,12 @@ from twa.logging import configure_logging, get_logger
 from twa.data.cache import MarketDataAggregator
 from twa.features.engineering import compute_all
 from twa.features.cross_exchange import normalise_funding, oi_momentum, orderbook_imbalance
-from twa.models.types import Timeframe, coerce_timeframe
+from twa.models.types import SignalEntryState, Timeframe, coerce_timeframe
 from twa.monitoring.health import HealthMonitor
 from twa.news.guard import NewsGuard
 from twa.orchestration.engine import Orchestrator
 from twa.regime.classifier import classify, regime_confidence
-from twa.signal.engine import compute_signal
+from twa.signal.engine import compute_signal, engine_config_from_settings
 
 log = get_logger("cli")
 
@@ -80,14 +80,26 @@ async def _paper(cfg: Settings, symbol: str, timeframe_str: str) -> int:
             "oi_delta": oi_momentum(getattr(oi, "open_interest", None), None),
             "obi": orderbook_imbalance(book, depth=10),
         }
-        sig = compute_signal(candles, timeframe, overrides, regime, reg_conf,
-                             news_dampen=nd, ml_calibration=1.0)
+        sig = compute_signal(
+            candles,
+            timeframe,
+            overrides,
+            regime,
+            reg_conf,
+            cfg=engine_config_from_settings(cfg),
+            news_dampen=nd,
+            ml_calibration=1.0,
+        )
         if sig is None:
             print(json.dumps({"symbol": symbol, "regime": regime.value, "confidence": reg_conf,
                               "note": "BELOW_MINIMUM_THRESHOLD"}, indent=2, default=str))
             return 0
         sig.news_dampen = nd
         sig.news_events = events
+        if not cfg.sniper_enabled:
+            sig.entry_state = SignalEntryState.ENTER_NOW
+            sig.entry_trigger = "sniper_disabled"
+            sig.max_wait_bars = 0
         print(json.dumps(sig.model_dump(), indent=2, default=str))
         return 0
     finally:
@@ -114,7 +126,14 @@ async def _backtest(cfg: Settings, symbol: str, timeframe_str: str, days: int) -
         if len(candles) < 60:
             print("NOT_ENOUGH_HISTORY")
             return 2
-        result = simulate(candles, timeframe, factor_overrides_list=[{}] * len(candles))
+        result = simulate(
+            candles,
+            timeframe,
+            factor_overrides_list=[{}] * len(candles),
+            settings=cfg,
+            cfg=engine_config_from_settings(cfg),
+            sniper_entry=cfg.sniper_enabled,
+        )
         summary = result.summary()
         summary["monte_carlo"] = monte_carlo(result.trades)
         summary["honesty"] = (
@@ -160,7 +179,7 @@ async def _health_once(cfg: Settings) -> dict:
 def cmd_config(args: argparse.Namespace) -> int:  # noqa: ARG001
     cfg = reload_settings()
     print(PROGRAM)
-    print(json.dumps(cfg.model_dump(mode="json"), indent=2, default=str))
+    print(json.dumps(_redacted_settings(cfg), indent=2, default=str))
     return 0
 
 
@@ -205,6 +224,14 @@ async def _research_benchmark(cfg: Settings, symbol: str, timeframe_str: str, da
         return 0
     finally:
         await runner.close()
+
+
+def _redacted_settings(cfg: Settings) -> dict:
+    payload = cfg.model_dump(mode="json")
+    for key in ("telegram_bot_token", "telegram_chat_id", "cryptopanic_public_key"):
+        if payload.get(key):
+            payload[key] = "***REDACTED***"
+    return payload
 
 
 def _select_settings(base: Settings, args: argparse.Namespace) -> Settings:

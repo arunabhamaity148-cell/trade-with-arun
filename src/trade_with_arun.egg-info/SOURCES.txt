@@ -68,6 +68,7 @@ tests/test_ml_calibrator.py
 tests/test_models.py
 tests/test_news_guard.py
 tests/test_orchestrator_integration.py
+tests/test_production_audit_regressions.py
 tests/test_regime.py
 tests/test_research_integrity.py
 tests/test_risk_engine.py
