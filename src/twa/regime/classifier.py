@@ -1,10 +1,22 @@
 """Market regime classifier.
 
-The previous version was effectively degenerate because any positive recent
-return forced TREND_UP (and any negative return forced TREND_DOWN). This
-version keeps the classifier deterministic/auditable, but requires alignment
-between trend, return, volatility, and range structure so all five regime
-labels are reachable in practice.
+The previous v2.2 regime stack mixed two different concepts:
+
+1. *Regime classification* — what environment the market is in.
+2. *Directional scoring* — whether the signal should lean long or short.
+
+Several factor weights in the v2.2 table encoded directional sign directly
+(e.g. negative weights inside ``TREND_DOWN``), even though the underlying
+features are already signed. That double-inverted bearish features and could
+turn obviously down-trending windows into bullish scores. The same table also
+let unsigned features such as realised volatility and volume z-score push the
+score's sign, which creates a structural bullish bias because those features
+are almost always positive.
+
+This module keeps the deterministic five-regime classifier, but the weight
+matrix is now *direction-neutral*: weights express feature usefulness, while
+feature sign determines long vs short direction. Unsigned features remain
+valuable for classification and risk, but no longer dictate signal direction.
 """
 from __future__ import annotations
 
@@ -34,62 +46,83 @@ class RegimeConfig:
 
 DEFAULT_CONFIG = RegimeConfig()
 
+# Factors whose raw value already contains directional sign.
+SIGNED_FACTORS = {
+    "funding",
+    "basis",
+    "oi_delta",
+    "trend_strength_48",
+    "log_return_16",
+    "obv_slope_48",
+    "obi",
+}
+
+# These are useful for regime detection / risk modulation, but are not
+# direction-bearing by themselves. Giving them directional score weight creates
+# a persistent bias because they are usually non-negative.
+NON_DIRECTIONAL_FACTORS = {
+    "volume_zscore_96",
+    "realised_vol_30",
+}
+
 
 FACTOR_WEIGHTS: Dict[RegimeLabel, Dict[str, float]] = {
     RegimeLabel.TREND_UP: {
-        "funding": 0.05,
-        "basis": 0.05,
-        "oi_delta": 0.10,
+        "funding": 0.08,
+        "basis": 0.08,
+        "oi_delta": 0.12,
         "trend_strength_48": 0.30,
-        "log_return_16": 0.15,
-        "obv_slope_48": 0.10,
-        "volume_zscore_96": 0.10,
-        "realised_vol_30": 0.05,
-        "obi": 0.10,
+        "log_return_16": 0.18,
+        "obv_slope_48": 0.12,
+        "volume_zscore_96": 0.0,
+        "realised_vol_30": 0.0,
+        "obi": 0.12,
     },
+    # IMPORTANT: signed factors keep positive usefulness weights here. Their raw
+    # values become negative in downtrends, so the score naturally turns bearish.
     RegimeLabel.TREND_DOWN: {
-        "funding": 0.05,
-        "basis": 0.05,
-        "oi_delta": 0.10,
-        "trend_strength_48": -0.30,
-        "log_return_16": -0.15,
-        "obv_slope_48": -0.10,
-        "volume_zscore_96": 0.10,
-        "realised_vol_30": 0.05,
-        "obi": -0.10,
+        "funding": 0.08,
+        "basis": 0.08,
+        "oi_delta": 0.12,
+        "trend_strength_48": 0.30,
+        "log_return_16": 0.18,
+        "obv_slope_48": 0.12,
+        "volume_zscore_96": 0.0,
+        "realised_vol_30": 0.0,
+        "obi": 0.12,
     },
     RegimeLabel.RANGE: {
-        "funding": 0.20,
-        "basis": 0.15,
-        "oi_delta": 0.15,
-        "trend_strength_48": 0.05,
-        "log_return_16": 0.05,
+        "funding": 0.18,
+        "basis": 0.14,
+        "oi_delta": 0.12,
+        "trend_strength_48": 0.08,
+        "log_return_16": 0.06,
         "obv_slope_48": 0.10,
-        "volume_zscore_96": 0.05,
-        "realised_vol_30": -0.05,
-        "obi": 0.25,
+        "volume_zscore_96": 0.0,
+        "realised_vol_30": 0.0,
+        "obi": 0.22,
     },
     RegimeLabel.VOLATILE: {
-        "funding": 0.10,
-        "basis": 0.15,
-        "oi_delta": 0.20,
-        "trend_strength_48": 0.10,
-        "log_return_16": 0.05,
-        "obv_slope_48": 0.05,
-        "volume_zscore_96": 0.20,
-        "realised_vol_30": -0.10,
-        "obi": 0.15,
+        "funding": 0.12,
+        "basis": 0.12,
+        "oi_delta": 0.14,
+        "trend_strength_48": 0.22,
+        "log_return_16": 0.14,
+        "obv_slope_48": 0.10,
+        "volume_zscore_96": 0.0,
+        "realised_vol_30": 0.0,
+        "obi": 0.16,
     },
     RegimeLabel.STRESSED: {
-        "funding": -0.10,
-        "basis": -0.10,
-        "oi_delta": -0.15,
-        "trend_strength_48": 0.0,
-        "log_return_16": 0.0,
-        "obv_slope_48": 0.0,
-        "volume_zscore_96": 0.10,
-        "realised_vol_30": -0.25,
-        "obi": -0.05,
+        "funding": 0.10,
+        "basis": 0.10,
+        "oi_delta": 0.12,
+        "trend_strength_48": 0.24,
+        "log_return_16": 0.16,
+        "obv_slope_48": 0.10,
+        "volume_zscore_96": 0.0,
+        "realised_vol_30": 0.0,
+        "obi": 0.12,
     },
 }
 
@@ -147,7 +180,11 @@ def regime_confidence(features: Dict[str, float], regime: RegimeLabel, cfg: Regi
         score = min(1.0, 0.65 * abs(trend) + 0.35 * ret_score)
     elif regime == RegimeLabel.RANGE:
         range_threshold = min(cfg.range_trend_max, cfg.range_strong)
-        score = min(1.0, max(0.0, 1.0 - vol / max(cfg.vol_range_max, 1e-9)) * 0.7 + max(0.0, 1.0 - abs(trend) / max(range_threshold, 1e-9)) * 0.3)
+        score = min(
+            1.0,
+            max(0.0, 1.0 - vol / max(cfg.vol_range_max, 1e-9)) * 0.7
+            + max(0.0, 1.0 - abs(trend) / max(range_threshold, 1e-9)) * 0.3,
+        )
     elif regime == RegimeLabel.VOLATILE:
         score = min(1.0, max(vol / cfg.vol_volatile, rng / max(cfg.relative_range_chop, 1e-9)))
     else:

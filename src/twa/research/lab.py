@@ -1,4 +1,4 @@
-"""Research composition root for offline datasets and feature frames."""
+"""Research composition root for offline datasets and point-in-time feature frames."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,10 +9,11 @@ import pandas as pd
 
 from twa.config import Settings
 from twa.data.cache import MarketDataAggregator
-from twa.features.engineering import candles_to_frame, compute_all
+from twa.features.engineering import candles_to_frame
 from twa.logging import get_logger
 from twa.models.types import Candle, Timeframe, coerce_timeframe
-from twa.regime.classifier import classify
+from twa.research.labels import OutcomeLabel, SignalGeometry, label_signal_outcome, summarize_outcome
+from twa.research.point_in_time import build_point_in_time_feature_frame, feature_store_manifest
 from twa.research.utils import ensure_research_dir, estimate_bar_count, forward_returns
 
 log = get_logger("research.lab")
@@ -47,7 +48,7 @@ class ResearchSession:
         frame = candles_to_frame(ordered).copy()
         frame.insert(0, "timestamp", [c.open_time for c in ordered])
         frame.insert(1, "symbol", symbol)
-        feature_frame = _build_feature_frame(symbol, ordered)
+        feature_frame = build_point_in_time_feature_frame(symbol, tf, ordered)
         return cls(
             settings=settings,
             symbol=symbol,
@@ -68,7 +69,39 @@ class ResearchSession:
         df = self.feature_frame.copy()
         df["forward_return"] = forward_returns(df["close"], horizon)
         df["forward_return_bps"] = df["forward_return"] * 10_000.0
+        df["label_end_index"] = df.index + int(horizon)
+        if "availability_time" in df:
+            df["label_end_time"] = df["availability_time"].shift(-horizon)
         return df.dropna(subset=["forward_return"]).reset_index(drop=True)
+
+    def feature_manifest(self) -> pd.DataFrame:
+        return feature_store_manifest()
+
+    def build_signal_outcome_rows(self, geometries: List[SignalGeometry]) -> pd.DataFrame:
+        rows: List[dict] = []
+        candle_map = {c.open_time: idx for idx, c in enumerate(self.candles)}
+        for geometry in geometries:
+            start_idx = candle_map.get(geometry.entry_time)
+            if start_idx is None:
+                continue
+            label = label_signal_outcome(geometry, self.candles[start_idx : start_idx + geometry.max_horizon_bars])
+            summary = summarize_outcome(label)
+            rows.append(
+                {
+                    "entry_time": geometry.entry_time,
+                    "label": summary.label,
+                    "target_index": summary.target_index,
+                    "resolved_at": summary.resolved_at,
+                    "resolution_bars": summary.resolution_bars,
+                    "exit_price": summary.exit_price,
+                    "outcome_sign": summary.outcome_sign,
+                }
+            )
+        frame = pd.DataFrame(rows)
+        if not frame.empty:
+            frame["label_end_time"] = frame["resolved_at"]
+            frame["label_end_index"] = frame["resolution_bars"].astype(int)
+        return frame
 
 
 class ResearchLab:
@@ -125,25 +158,3 @@ class ResearchLab:
         oi = await self.data.fetch_open_interest(symbol)
         book = await self.data.fetch_orderbook(symbol, depth=20)
         return funding, oi, book
-
-
-def _build_feature_frame(symbol: str, candles: List[Candle], min_history: int = 64) -> pd.DataFrame:
-    rows: List[dict] = []
-    if not candles:
-        return pd.DataFrame(columns=["timestamp", "symbol", "close", "regime"])
-    for idx in range(min_history - 1, len(candles)):
-        window = candles[:idx + 1]
-        feats = compute_all(window)
-        row = {
-            "timestamp": candles[idx].open_time,
-            "symbol": symbol,
-            "open": candles[idx].open,
-            "high": candles[idx].high,
-            "low": candles[idx].low,
-            "close": candles[idx].close,
-            "volume": candles[idx].volume,
-            "regime": classify(feats).value,
-        }
-        row.update(feats)
-        rows.append(row)
-    return pd.DataFrame(rows)

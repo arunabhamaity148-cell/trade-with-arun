@@ -26,6 +26,7 @@ class CalibrationReport(BaseModel):
     method: str
     rows_used: int
     metrics: CalibrationMetrics
+    drift_summary: str = ""
 
 
 class ProbabilityCalibratorModel:
@@ -54,6 +55,15 @@ class CalibrationPipeline:
         df = load_jsonl(path)
         return self.fit_frame(df, method=method)
 
+    def fit_out_of_fold(self, frame: pd.DataFrame, *, prediction_col: str = "prediction", target_col: str = "target", method: str = "isotonic") -> CalibrationReport:
+        df = frame.copy()
+        if prediction_col not in df or target_col not in df:
+            raise ValueError("out-of-fold frame must contain prediction and target columns")
+        df = df[[prediction_col, target_col]].dropna().copy()
+        df["prediction"] = df[prediction_col].astype(float).abs().clip(0.001, 0.999)
+        df["outcome"] = (df[target_col].astype(float) > 0).astype(float)
+        return self.fit_frame(df[["prediction", "outcome"]].rename(columns={"prediction": "raw_confidence"}), method=method)
+
     def fit_frame(self, frame: pd.DataFrame, *, method: str = "isotonic") -> CalibrationReport:
         conf_col = "raw_confidence" if "raw_confidence" in frame else ("confidence" if "confidence" in frame else None)
         outcome_col = "realized_outcome" if "realized_outcome" in frame else ("outcome" if "outcome" in frame else None)
@@ -76,6 +86,7 @@ class CalibrationPipeline:
             method=method,
             rows_used=int(len(df)),
             metrics=metrics,
+            drift_summary=self._drift_summary(metrics),
         )
         report_dir = ensure_research_dir(self.settings, "calibration")
         (report_dir / "latest_report.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
@@ -112,3 +123,16 @@ class CalibrationPipeline:
                 "realized_rate": hit_rate,
             })
         return CalibrationMetrics(brier_score=brier, ece=float(ece), reliability_bins=details)
+
+    def _drift_summary(self, metrics: CalibrationMetrics) -> str:
+        if not metrics.reliability_bins:
+            return "No reliability bins available."
+        largest_gap = max((abs(row["avg_confidence"] - row["realized_rate"]), row) for row in metrics.reliability_bins)
+        gap, row = largest_gap
+        if gap <= 0.05:
+            return "Calibration is stable; predicted confidence and realized hit rate stay closely aligned across bins."
+        direction = "over-confident" if row["avg_confidence"] > row["realized_rate"] else "under-confident"
+        return (
+            f"Largest calibration drift appears in {row['bin_left']:.1f}-{row['bin_right']:.1f} confidence: "
+            f"the model is {direction} by about {gap:.2f}."
+        )

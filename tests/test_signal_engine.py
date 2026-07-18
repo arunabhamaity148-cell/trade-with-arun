@@ -40,7 +40,7 @@ def test_signal_short_on_downtrend():
                                         oi_delta_norm=-0.8, obi_norm=-0.8)
     sig = compute_signal(candles, Timeframe.H1, overrides, regime, regime_conf=0.95)
     assert sig is not None
-    assert sig.side in (Side.LONG, Side.SHORT)
+    assert sig.side == Side.SHORT
     assert sig.confidence > 0.0
 
 

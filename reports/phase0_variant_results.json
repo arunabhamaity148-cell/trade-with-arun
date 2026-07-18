@@ -1,0 +1,50 @@
+[
+  {
+    "name": "current",
+    "trades": 67,
+    "edge_per_trade_bps": -21.536322946221357,
+    "hit_rate": 0.2537313432835821,
+    "drawdown_bps": 1585.6321309154891,
+    "sharpe_like": -4.407948869900133,
+    "enter_now_trades": 61,
+    "enter_now_hit_rate": 0.21311475409836064,
+    "wait_trades": 6,
+    "wait_hit_rate": 0.6666666666666666
+  },
+  {
+    "name": "revert_rr_targets",
+    "trades": 67,
+    "edge_per_trade_bps": -20.943696812903937,
+    "hit_rate": 0.2835820895522388,
+    "drawdown_bps": 1594.8132872502515,
+    "sharpe_like": -4.333893201014249,
+    "enter_now_trades": 61,
+    "enter_now_hit_rate": 0.22950819672131148,
+    "wait_trades": 6,
+    "wait_hit_rate": 0.8333333333333334
+  },
+  {
+    "name": "revert_factor_normalization",
+    "trades": 67,
+    "edge_per_trade_bps": -21.536322946221357,
+    "hit_rate": 0.2537313432835821,
+    "drawdown_bps": 1585.6321309154891,
+    "sharpe_like": -4.407948869900133,
+    "enter_now_trades": 61,
+    "enter_now_hit_rate": 0.21311475409836064,
+    "wait_trades": 6,
+    "wait_hit_rate": 0.6666666666666666
+  },
+  {
+    "name": "revert_regime_classifier",
+    "trades": 71,
+    "edge_per_trade_bps": -18.344036817705735,
+    "hit_rate": 0.30985915492957744,
+    "drawdown_bps": 1531.482495435494,
+    "sharpe_like": -3.530231920493752,
+    "enter_now_trades": 69,
+    "enter_now_hit_rate": 0.30434782608695654,
+    "wait_trades": 2,
+    "wait_hit_rate": 0.5
+  }
+]

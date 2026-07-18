@@ -1,7 +1,7 @@
 """In-sample/out-of-sample edge validation with significance and sensitivity checks."""
 from __future__ import annotations
 
-from typing import Callable, Dict
+from typing import Callable, Dict, Iterable, List
 
 import numpy as np
 import pandas as pd
@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from twa.logging import get_logger
 from twa.research.lab import ResearchSession
 from twa.research.utils import sharpe_like
+from twa.research.walk_forward import WalkForwardConfig, WalkForwardValidator
 
 log = get_logger("research.edge_validation")
 
@@ -34,8 +35,21 @@ class EdgeValidationResult(BaseModel):
     in_sample_sharpe: float
     out_sample_sharpe: float
     p_value: float
+    q_value: float = 1.0
     sensitivity: Dict[str, float] = Field(default_factory=dict)
     note: str = "ok"
+
+
+def benjamini_hochberg(p_values: Iterable[float]) -> List[float]:
+    pairs = sorted((float(p), idx) for idx, p in enumerate(p_values))
+    n = len(pairs)
+    adjusted = [1.0] * n
+    running = 1.0
+    for rank, (p_value, idx) in enumerate(reversed(pairs), start=1):
+        denom = max(1, n - rank + 1)
+        running = min(running, p_value * n / denom)
+        adjusted[idx] = float(min(1.0, running))
+    return adjusted
 
 
 class EdgeValidationFramework:
@@ -68,9 +82,8 @@ class EdgeValidationFramework:
         p_value = self._bootstrap_p_value(test_rets, bootstrap_runs)
         sensitivity = self._sensitivity(session, strategy) if isinstance(strategy, ThresholdStrategy) else {}
         stable = not sensitivity or all(np.sign(v or 0.0) == np.sign(out_mean or 0.0) for v in sensitivity.values())
-        passed = bool(
-            len(test_rets) >= 10 and out_mean > 0 and in_mean > 0 and p_value <= 0.10 and stable
-        )
+        q_value = benjamini_hochberg([p_value])[0]
+        passed = bool(len(test_rets) >= 10 and out_mean > 0 and in_mean > 0 and q_value <= 0.10 and stable)
         note = "ok" if passed else "FAILED_VALIDATION"
         return EdgeValidationResult(
             strategy_name=name,
@@ -82,9 +95,38 @@ class EdgeValidationFramework:
             in_sample_sharpe=in_sharpe,
             out_sample_sharpe=out_sharpe,
             p_value=p_value,
+            q_value=q_value,
             sensitivity=sensitivity,
             note=note,
         )
+
+    def validate_many(
+        self,
+        session: ResearchSession,
+        strategies: List[ThresholdStrategy],
+        *,
+        bootstrap_runs: int = 400,
+    ) -> List[EdgeValidationResult]:
+        results = [self.validate(session, strategy, bootstrap_runs=bootstrap_runs) for strategy in strategies]
+        q_values = benjamini_hochberg([row.p_value for row in results])
+        updated: List[EdgeValidationResult] = []
+        for row, q_value in zip(results, q_values):
+            updated.append(row.model_copy(update={"q_value": q_value, "passed": bool(row.out_sample_mean_bps > 0 and q_value <= 0.10 and row.out_sample_trades >= 10)}))
+        return updated
+
+    def purged_walk_forward_score(self, session: ResearchSession, strategy: ThresholdStrategy) -> dict:
+        frame = session.target_frame(strategy.horizon)
+        config = WalkForwardConfig(
+            train_bars=max(80, min(160, len(frame) // 2)),
+            test_bars=max(20, min(40, len(frame) // 6)),
+            step_bars=max(20, min(40, len(frame) // 6)),
+            folds=4,
+            target_column="forward_return_bps",
+            embargo_bars=max(1, int(strategy.horizon)),
+        )
+        validator = WalkForwardValidator()
+        result = validator.run(frame, lambda train, test: self._positions_from_threshold(test.assign(**train.iloc[:0].to_dict()), strategy), config)
+        return result.model_dump()
 
     def _positions_from_threshold(self, df: pd.DataFrame, strategy: ThresholdStrategy) -> pd.Series:
         if strategy.feature_name not in df:
@@ -125,7 +167,4 @@ class EdgeValidationFramework:
                 f"threshold_abs_-{abs_shift:.2f}": -abs_shift,
                 f"threshold_abs_+{abs_shift:.2f}": abs_shift,
             }
-        return {
-            f"threshold_x{mult:.2f}": strategy.threshold * mult
-            for mult in (1.0 - strategy.sensitivity_pct, 1.0 + strategy.sensitivity_pct)
-        }
+        return {f"threshold_x{mult:.2f}": strategy.threshold * mult for mult in (1.0 - strategy.sensitivity_pct, 1.0 + strategy.sensitivity_pct)}

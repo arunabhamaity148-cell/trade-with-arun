@@ -1,0 +1,852 @@
+{
+  "simulate": {
+    "window": [
+      "2025-05-01T00:00:00+00:00",
+      "2025-05-30T23:00:00+00:00"
+    ],
+    "trades": 14,
+    "edge_per_trade_bps": 30.683979379648484,
+    "hit_rate_actual": 0.7142857142857143,
+    "drawdown_bps": 15.2625210149031,
+    "sharpe_like": 2.8332226308163326
+  },
+  "benchmark_report": {
+    "symbol": "BTCUSDT",
+    "timeframe": "1h",
+    "window": [
+      "2025-05-01T00:00:00+00:00",
+      "2025-05-30T23:00:00+00:00"
+    ],
+    "strategies": [
+      {
+        "name": "production_engine_technical_only",
+        "trades": 5,
+        "edge_per_trade_bps": 36.535085652115164,
+        "hit_rate": 0.6,
+        "drawdown_bps": 25.62332137117318,
+        "sharpe_like": 1.3447986903591493,
+        "fold_breakdown": [
+          {
+            "fold": 0,
+            "train_start": 0,
+            "train_end": 120,
+            "test_start": 120,
+            "test_end": 160,
+            "trades": 5,
+            "mean_return": 36.535085652115164,
+            "sharpe_like": 1.3447986903591493,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 5,
+                "mean_return": 36.535085652115164,
+                "sharpe_like": 1.3447986903591493
+              }
+            ]
+          },
+          {
+            "fold": 1,
+            "train_start": 44,
+            "train_end": 164,
+            "test_start": 164,
+            "test_end": 204,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 2,
+            "train_start": 88,
+            "train_end": 208,
+            "test_start": 208,
+            "test_end": 248,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 3,
+            "train_start": 132,
+            "train_end": 252,
+            "test_start": 252,
+            "test_end": 292,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 4,
+            "train_start": 176,
+            "train_end": 296,
+            "test_start": 296,
+            "test_end": 336,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          }
+        ],
+        "regime_breakdown": [
+          {
+            "regime": "trend_up",
+            "trades": 5,
+            "mean_return": 36.535085652115164,
+            "sharpe_like": 1.3447986903591493
+          }
+        ]
+      },
+      {
+        "name": "production_engine_with_news_guard",
+        "trades": 5,
+        "edge_per_trade_bps": 36.535085652115164,
+        "hit_rate": 0.6,
+        "drawdown_bps": 25.62332137117318,
+        "sharpe_like": 1.3447986903591493,
+        "fold_breakdown": [
+          {
+            "fold": 0,
+            "train_start": 0,
+            "train_end": 120,
+            "test_start": 120,
+            "test_end": 160,
+            "trades": 5,
+            "mean_return": 36.535085652115164,
+            "sharpe_like": 1.3447986903591493,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 5,
+                "mean_return": 36.535085652115164,
+                "sharpe_like": 1.3447986903591493
+              }
+            ]
+          },
+          {
+            "fold": 1,
+            "train_start": 44,
+            "train_end": 164,
+            "test_start": 164,
+            "test_end": 204,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 2,
+            "train_start": 88,
+            "train_end": 208,
+            "test_start": 208,
+            "test_end": 248,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 3,
+            "train_start": 132,
+            "train_end": 252,
+            "test_start": 252,
+            "test_end": 292,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 4,
+            "train_start": 176,
+            "train_end": 296,
+            "test_start": 296,
+            "test_end": 336,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          }
+        ],
+        "regime_breakdown": [
+          {
+            "regime": "trend_up",
+            "trades": 5,
+            "mean_return": 36.535085652115164,
+            "sharpe_like": 1.3447986903591493
+          }
+        ]
+      },
+      {
+        "name": "production_engine_without_news_guard",
+        "trades": 5,
+        "edge_per_trade_bps": 36.535085652115164,
+        "hit_rate": 0.6,
+        "drawdown_bps": 25.62332137117318,
+        "sharpe_like": 1.3447986903591493,
+        "fold_breakdown": [
+          {
+            "fold": 0,
+            "train_start": 0,
+            "train_end": 120,
+            "test_start": 120,
+            "test_end": 160,
+            "trades": 5,
+            "mean_return": 36.535085652115164,
+            "sharpe_like": 1.3447986903591493,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 5,
+                "mean_return": 36.535085652115164,
+                "sharpe_like": 1.3447986903591493
+              }
+            ]
+          },
+          {
+            "fold": 1,
+            "train_start": 44,
+            "train_end": 164,
+            "test_start": 164,
+            "test_end": 204,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 2,
+            "train_start": 88,
+            "train_end": 208,
+            "test_start": 208,
+            "test_end": 248,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 3,
+            "train_start": 132,
+            "train_end": 252,
+            "test_start": 252,
+            "test_end": 292,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          },
+          {
+            "fold": 4,
+            "train_start": 176,
+            "train_end": 296,
+            "test_start": 296,
+            "test_end": 336,
+            "trades": 0,
+            "mean_return": 0.0,
+            "sharpe_like": 0.0,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": []
+          }
+        ],
+        "regime_breakdown": [
+          {
+            "regime": "trend_up",
+            "trades": 5,
+            "mean_return": 36.535085652115164,
+            "sharpe_like": 1.3447986903591493
+          }
+        ]
+      },
+      {
+        "name": "random_entry",
+        "trades": 32,
+        "edge_per_trade_bps": 1.4111490109353224,
+        "hit_rate": 0.4932279942279941,
+        "drawdown_bps": 179.6472072807666,
+        "sharpe_like": 0.18544038555447478,
+        "fold_breakdown": [
+          {
+            "fold": 0,
+            "train_start": 0,
+            "train_end": 120,
+            "test_start": 120,
+            "test_end": 160,
+            "trades": 5,
+            "mean_return": 17.996458663511962,
+            "sharpe_like": 0.6131489849659343,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 5,
+                "mean_return": 17.996458663511962,
+                "sharpe_like": 0.6131489849659343
+              }
+            ]
+          },
+          {
+            "fold": 1,
+            "train_start": 44,
+            "train_end": 164,
+            "test_start": 164,
+            "test_end": 204,
+            "trades": 5,
+            "mean_return": -10.184672107264259,
+            "sharpe_like": -0.8011540864859146,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 5,
+                "mean_return": -10.184672107264259,
+                "sharpe_like": -0.8011540864859146
+              }
+            ]
+          },
+          {
+            "fold": 2,
+            "train_start": 88,
+            "train_end": 208,
+            "test_start": 208,
+            "test_end": 248,
+            "trades": 5,
+            "mean_return": 18.84102769449303,
+            "sharpe_like": 5.2840635417334365,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_down",
+                "trades": 3,
+                "mean_return": 20.00126192087004,
+                "sharpe_like": 3.5462461528754985
+              },
+              {
+                "regime": "trend_up",
+                "trades": 2,
+                "mean_return": 17.100676354927515,
+                "sharpe_like": 3.312171757072717
+              }
+            ]
+          },
+          {
+            "fold": 3,
+            "train_start": 132,
+            "train_end": 252,
+            "test_start": 252,
+            "test_end": 292,
+            "trades": 5,
+            "mean_return": -27.70920181698822,
+            "sharpe_like": -1.942428612285246,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_down",
+                "trades": 2,
+                "mean_return": -51.809722617818245,
+                "sharpe_like": -10.09587362241152
+              },
+              {
+                "regime": "trend_up",
+                "trades": 3,
+                "mean_return": -11.642187949768198,
+                "sharpe_like": -0.6251127482315507
+              }
+            ]
+          },
+          {
+            "fold": 4,
+            "train_start": 176,
+            "train_end": 296,
+            "test_start": 296,
+            "test_end": 336,
+            "trades": 5,
+            "mean_return": -7.356761324325722,
+            "sharpe_like": -0.7631777269152921,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "range",
+                "trades": 1,
+                "mean_return": 5.2747022173182945,
+                "sharpe_like": 0.0
+              },
+              {
+                "regime": "trend_up",
+                "trades": 4,
+                "mean_return": -10.514627209736727,
+                "sharpe_like": -0.8942515588901089
+              }
+            ]
+          }
+        ],
+        "regime_breakdown": [
+          {
+            "regime": "range",
+            "trades": 1,
+            "mean_return": 5.2747022173182945,
+            "sharpe_like": 0.0
+          },
+          {
+            "regime": "trend_down",
+            "trades": 5,
+            "mean_return": -8.723131894605274,
+            "sharpe_like": -3.274813734768011
+          },
+          {
+            "regime": "trend_up",
+            "trades": 19,
+            "mean_return": -0.19604143142936623,
+            "sharpe_like": 0.32096046968621544
+          }
+        ]
+      },
+      {
+        "name": "buy_and_hold",
+        "trades": 200,
+        "edge_per_trade_bps": 1.093833842290443,
+        "hit_rate": 0.475,
+        "drawdown_bps": 341.90891401129295,
+        "sharpe_like": 0.40735570489226197,
+        "fold_breakdown": [
+          {
+            "fold": 0,
+            "train_start": 0,
+            "train_end": 120,
+            "test_start": 120,
+            "test_end": 160,
+            "trades": 40,
+            "mean_return": 7.388432050643074,
+            "sharpe_like": 1.2244280478773322,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 40,
+                "mean_return": 7.388432050643074,
+                "sharpe_like": 1.2244280478773322
+              }
+            ]
+          },
+          {
+            "fold": 1,
+            "train_start": 44,
+            "train_end": 164,
+            "test_start": 164,
+            "test_end": 204,
+            "trades": 40,
+            "mean_return": 1.7247179549173268,
+            "sharpe_like": 0.3034493926876116,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 40,
+                "mean_return": 1.7247179549173268,
+                "sharpe_like": 0.3034493926876116
+              }
+            ]
+          },
+          {
+            "fold": 2,
+            "train_start": 88,
+            "train_end": 208,
+            "test_start": 208,
+            "test_end": 248,
+            "trades": 40,
+            "mean_return": -0.7248330133516341,
+            "sharpe_like": -0.10104946788616403,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_down",
+                "trades": 28,
+                "mean_return": 7.887915447249865,
+                "sharpe_like": 0.9980045898333498
+              },
+              {
+                "regime": "trend_up",
+                "trades": 12,
+                "mean_return": -20.82124608808846,
+                "sharpe_like": -1.4802471151633632
+              }
+            ]
+          },
+          {
+            "fold": 3,
+            "train_start": 132,
+            "train_end": 252,
+            "test_start": 252,
+            "test_end": 292,
+            "trades": 40,
+            "mean_return": -0.9817558628558704,
+            "sharpe_like": -0.14610884237937152,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "range",
+                "trades": 6,
+                "mean_return": -8.187031858198912,
+                "sharpe_like": -0.7182851198724123
+              },
+              {
+                "regime": "trend_down",
+                "trades": 14,
+                "mean_return": 5.607460683875187,
+                "sharpe_like": 0.34460896595794854
+              },
+              {
+                "regime": "trend_up",
+                "trades": 20,
+                "mean_return": -3.432624646964699,
+                "sharpe_like": -0.5086339119694826
+              }
+            ]
+          },
+          {
+            "fold": 4,
+            "train_start": 176,
+            "train_end": 296,
+            "test_start": 296,
+            "test_end": 336,
+            "trades": 40,
+            "mean_return": -1.9373919179006822,
+            "sharpe_like": -0.4674111332476563,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "range",
+                "trades": 4,
+                "mean_return": 5.913639488959177,
+                "sharpe_like": 0.45098120795659696
+              },
+              {
+                "regime": "trend_down",
+                "trades": 4,
+                "mean_return": 6.5368195411294465,
+                "sharpe_like": 0.6684297079906287
+              },
+              {
+                "regime": "trend_up",
+                "trades": 32,
+                "mean_return": -3.978047276136931,
+                "sharpe_like": -0.8275312264385892
+              }
+            ]
+          }
+        ],
+        "regime_breakdown": [
+          {
+            "regime": "range",
+            "trades": 10,
+            "mean_return": -2.546763319335676,
+            "sharpe_like": -0.13365195595790766
+          },
+          {
+            "regime": "trend_down",
+            "trades": 46,
+            "mean_return": 7.076377396994926,
+            "sharpe_like": 0.6703477545939757
+          },
+          {
+            "regime": "trend_up",
+            "trades": 144,
+            "mean_return": -0.5644372125716757,
+            "sharpe_like": -0.2577069626012983
+          }
+        ]
+      },
+      {
+        "name": "ma_crossover",
+        "trades": 200,
+        "edge_per_trade_bps": 0.19599797791747847,
+        "hit_rate": 0.47,
+        "drawdown_bps": 456.5016991408521,
+        "sharpe_like": 0.0729623563203808,
+        "fold_breakdown": [
+          {
+            "fold": 0,
+            "train_start": 0,
+            "train_end": 120,
+            "test_start": 120,
+            "test_end": 160,
+            "trades": 40,
+            "mean_return": 6.555363453394553,
+            "sharpe_like": 1.0819537558355719,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 40,
+                "mean_return": 6.555363453394553,
+                "sharpe_like": 1.0819537558355719
+              }
+            ]
+          },
+          {
+            "fold": 1,
+            "train_start": 44,
+            "train_end": 164,
+            "test_start": 164,
+            "test_end": 204,
+            "trades": 40,
+            "mean_return": 1.7247179549173268,
+            "sharpe_like": 0.3034493926876116,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_up",
+                "trades": 40,
+                "mean_return": 1.7247179549173268,
+                "sharpe_like": 0.3034493926876116
+              }
+            ]
+          },
+          {
+            "fold": 2,
+            "train_start": 88,
+            "train_end": 208,
+            "test_start": 208,
+            "test_end": 248,
+            "trades": 40,
+            "mean_return": -7.450987442172542,
+            "sharpe_like": -1.0532799635197585,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "trend_down",
+                "trades": 28,
+                "mean_return": -0.5105977504234789,
+                "sharpe_like": -0.06344762208397924
+              },
+              {
+                "regime": "trend_up",
+                "trades": 12,
+                "mean_return": -23.645230056253684,
+                "sharpe_like": -1.7317128784037525
+              }
+            ]
+          },
+          {
+            "fold": 3,
+            "train_start": 132,
+            "train_end": 252,
+            "test_start": 252,
+            "test_end": 292,
+            "trades": 40,
+            "mean_return": 2.701146419105016,
+            "sharpe_like": 0.4027202235122728,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "range",
+                "trades": 6,
+                "mean_return": 13.296105639418002,
+                "sharpe_like": 1.27963644974853
+              },
+              {
+                "regime": "trend_down",
+                "trades": 14,
+                "mean_return": -5.607460683875187,
+                "sharpe_like": -0.34460896595794854
+              },
+              {
+                "regime": "trend_up",
+                "trades": 20,
+                "mean_return": 5.3386836250972625,
+                "sharpe_like": 0.7988210521129474
+              }
+            ]
+          },
+          {
+            "fold": 4,
+            "train_start": 176,
+            "train_end": 296,
+            "test_start": 296,
+            "test_end": 336,
+            "trades": 40,
+            "mean_return": -2.5502504956569636,
+            "sharpe_like": -0.6165347489119576,
+            "purged_rows": 1,
+            "embargo_rows": 4,
+            "regime_breakdown": [
+              {
+                "regime": "range",
+                "trades": 4,
+                "mean_return": -5.913639488959177,
+                "sharpe_like": -0.45098120795659696
+              },
+              {
+                "regime": "trend_down",
+                "trades": 4,
+                "mean_return": 15.020941281727318,
+                "sharpe_like": 2.5510647480861697
+              },
+              {
+                "regime": "trend_up",
+                "trades": 32,
+                "mean_return": -4.326225843667222,
+                "sharpe_like": -0.9017826127605441
+              }
+            ]
+          }
+        ],
+        "regime_breakdown": [
+          {
+            "regime": "range",
+            "trades": 10,
+            "mean_return": 5.612207588067131,
+            "sharpe_like": 0.41432762089596653
+          },
+          {
+            "regime": "trend_down",
+            "trades": 46,
+            "mean_return": -0.7112482925913208,
+            "sharpe_like": 0.7143360533480806
+          },
+          {
+            "regime": "trend_up",
+            "trades": 144,
+            "mean_return": 0.10968709140295196,
+            "sharpe_like": -0.08985425810563315
+          }
+        ]
+      }
+    ],
+    "best_strategy": "production_engine_technical_only"
+  },
+  "production_walk_forward": {
+    "name": "production_engine_without_news_guard",
+    "trades": 5,
+    "edge_per_trade_bps": 36.535085652115164,
+    "hit_rate": 0.6,
+    "drawdown_bps": 25.62332137117318,
+    "sharpe_like": 1.3447986903591493,
+    "fold_breakdown": [
+      {
+        "fold": 0,
+        "train_start": 0,
+        "train_end": 120,
+        "test_start": 120,
+        "test_end": 160,
+        "trades": 5,
+        "mean_return": 36.535085652115164,
+        "sharpe_like": 1.3447986903591493,
+        "purged_rows": 1,
+        "embargo_rows": 4,
+        "regime_breakdown": [
+          {
+            "regime": "trend_up",
+            "trades": 5,
+            "mean_return": 36.535085652115164,
+            "sharpe_like": 1.3447986903591493
+          }
+        ]
+      },
+      {
+        "fold": 1,
+        "train_start": 44,
+        "train_end": 164,
+        "test_start": 164,
+        "test_end": 204,
+        "trades": 0,
+        "mean_return": 0.0,
+        "sharpe_like": 0.0,
+        "purged_rows": 1,
+        "embargo_rows": 4,
+        "regime_breakdown": []
+      },
+      {
+        "fold": 2,
+        "train_start": 88,
+        "train_end": 208,
+        "test_start": 208,
+        "test_end": 248,
+        "trades": 0,
+        "mean_return": 0.0,
+        "sharpe_like": 0.0,
+        "purged_rows": 1,
+        "embargo_rows": 4,
+        "regime_breakdown": []
+      },
+      {
+        "fold": 3,
+        "train_start": 132,
+        "train_end": 252,
+        "test_start": 252,
+        "test_end": 292,
+        "trades": 0,
+        "mean_return": 0.0,
+        "sharpe_like": 0.0,
+        "purged_rows": 1,
+        "embargo_rows": 4,
+        "regime_breakdown": []
+      },
+      {
+        "fold": 4,
+        "train_start": 176,
+        "train_end": 296,
+        "test_start": 296,
+        "test_end": 336,
+        "trades": 0,
+        "mean_return": 0.0,
+        "sharpe_like": 0.0,
+        "purged_rows": 1,
+        "embargo_rows": 4,
+        "regime_breakdown": []
+      }
+    ],
+    "regime_breakdown": [
+      {
+        "regime": "trend_up",
+        "trades": 5,
+        "mean_return": 36.535085652115164,
+        "sharpe_like": 1.3447986903591493
+      }
+    ]
+  }
+}

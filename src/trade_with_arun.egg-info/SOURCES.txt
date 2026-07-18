@@ -44,6 +44,8 @@ src/twa/research/experiment_runner.py
 src/twa/research/feature_discovery.py
 src/twa/research/feature_drift.py
 src/twa/research/lab.py
+src/twa/research/labels.py
+src/twa/research/point_in_time.py
 src/twa/research/regime_lab.py
 src/twa/research/utils.py
 src/twa/research/walk_forward.py
