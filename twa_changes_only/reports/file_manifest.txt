@@ -1,0 +1,8 @@
+src/twa/signal/engine.py
+src/twa/research/benchmarking.py
+src/twa/research/utils.py
+src/twa/research/feature_discovery.py
+src/twa/research/public_market_data.py
+scripts/run_factor_research.py
+tests/test_signal_engine.py
+tests/research/test_benchmarking.py
